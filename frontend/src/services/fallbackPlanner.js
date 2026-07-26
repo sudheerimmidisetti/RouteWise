@@ -2,7 +2,7 @@
  * Client-Side Fallback Trip Planning & FMCSA HOS Engine.
  *
  * Runs automatically when the backend server is unreachable (e.g. Vercel deployment without backend URL).
- * Geocodes waypoints via Nominatim, fetches turn-by-turn road geometry from OSRM,
+ * Geocodes waypoints via Nominatim, fetches turn-by-turn road geometry from OSM Germany OSRM API leg-by-leg,
  * calculates 1000-mile fuel stops, 11h/14h/8h/70h FMCSA HOS rules, and generates 24-hour daily log sheets.
  */
 
@@ -19,7 +19,7 @@ export const fallbackPlanTrip = async (tripData) => {
   const pickCoords = await resolveCoords(pickupLocation, locDetails.pickupLocation);
   const dropCoords = await resolveCoords(dropoffLocation, locDetails.dropoffLocation);
 
-  // 2. Fetch OSRM Road Routing Geometry, Distance, and Duration
+  // 2. Fetch OSRM Road Routing Geometry, Distance, and Duration (Leg-by-Leg Turn-by-Turn Road Geometry)
   const routeResult = await fetchOSRMRoute(currCoords, pickCoords, dropCoords, currentLocation, pickupLocation, dropoffLocation);
 
   const distanceMiles = routeResult.distance_miles;
@@ -85,6 +85,35 @@ async function resolveCoords(name, detailObj) {
   return { lat: 17.38 + (hash % 10), lon: 78.48 + ((hash * 3) % 10) };
 }
 
+async function fetchOSRMLeg(p1, p2) {
+  const coordsStr = `${p1.lon},${p1.lat};${p2.lon},${p2.lat}`;
+
+  // Try Primary OSM Germany OSRM API, fallback to demo OSRM server
+  const urls = [
+    `https://routing.openstreetmap.de/routed-car/route/v1/driving/${coordsStr}?overview=full&geometries=geojson`,
+    `https://router.project-osrm.org/route/v1/driving/${coordsStr}?overview=full&geometries=geojson`,
+  ];
+
+  for (const url of urls) {
+    try {
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.routes && data.routes.length > 0) {
+          const route = data.routes[0];
+          const distMeters = route.distance;
+          const durSec = route.duration;
+          const geo = route.geometry.coordinates.map((pt) => [pt[1], pt[0]]);
+          return { geo, distMeters, durSec };
+        }
+      }
+    } catch (e) {
+      // try next url
+    }
+  }
+  return null;
+}
+
 async function fetchOSRMRoute(curr, pick, drop, currName, pickName, dropName) {
   const waypoints = [
     { name: currName, lat: curr.lat, lon: curr.lon, type: 'CURRENT' },
@@ -92,32 +121,56 @@ async function fetchOSRMRoute(curr, pick, drop, currName, pickName, dropName) {
     { name: dropName, lat: drop.lat, lon: drop.lon, type: 'DROPOFF' },
   ];
 
-  try {
-    const coordsStr = `${curr.lon},${curr.lat};${pick.lon},${pick.lat};${drop.lon},${drop.lat}`;
-    const url = `https://router.project-osrm.org/route/v1/driving/${coordsStr}?overview=full&geometries=geojson`;
-    const res = await fetch(url);
-    if (res.ok) {
-      const data = await res.json();
-      if (data.routes && data.routes.length > 0) {
-        const route = data.routes[0];
-        const distMiles = Math.round(route.distance * 0.000621371 * 10) / 10;
-        const durHours = Math.round((route.duration / 3600.0) * 100) / 100;
-        const geo = route.geometry.coordinates.map((pt) => [pt[1], pt[0]]);
-        return { distance_miles: distMiles, duration_hours: durHours, geometry: geo, waypoints };
-      }
-    }
-  } catch (e) {
-    // fallback
+  const leg1 = await fetchOSRMLeg(curr, pick);
+  const leg2 = await fetchOSRMLeg(pick, drop);
+
+  if (leg1 && leg2) {
+    const combinedGeo = [...leg1.geo, ...leg2.geo];
+    const totalDistMeters = leg1.distMeters + leg2.distMeters;
+    const totalDurSec = leg1.durSec + leg2.durSec;
+
+    const distMiles = Math.round(totalDistMeters * 0.000621371 * 10) / 10;
+    const durHours = Math.round((totalDurSec / 3600.0) * 100) / 100;
+
+    return {
+      distance_miles: distMiles,
+      duration_hours: durHours,
+      geometry: combinedGeo,
+      waypoints,
+    };
   }
 
+  // Fallback to curved highway corridor geometry interpolation
+  const geo = generateCurvedHighwayGeometry(curr, pick, drop);
   const distMiles = calculateApproxDist(curr, pick, drop);
   const durHours = Math.round((distMiles / 55.0) * 100) / 100;
-  const geo = [
-    [curr.lat, curr.lon],
-    [pick.lat, pick.lon],
-    [drop.lat, drop.lon],
-  ];
   return { distance_miles: distMiles, duration_hours: durHours, geometry: geo, waypoints };
+}
+
+function generateCurvedHighwayGeometry(p1, p2, p3) {
+  const points = [];
+
+  const interpolateCurvedSegment = (start, end, steps = 40) => {
+    const dlat = end.lat - start.lat;
+    const dlng = end.lon - start.lon;
+    const dist = Math.sqrt(dlat * dlat + dlng * dlng);
+
+    const perpLat = -dlng / (dist > 0 ? dist : 1);
+    const perpLng = dlat / (dist > 0 ? dist : 1);
+    const curveMagnitude = dist * 0.15;
+
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const arc = Math.sin(t * Math.PI) * curveMagnitude;
+      const lat = start.lat + t * dlat + perpLat * arc;
+      const lng = start.lon + t * dlng + perpLng * arc;
+      points.push([Math.round(lat * 1e6) / 1e6, Math.round(lng * 1e6) / 1e6]);
+    }
+  };
+
+  interpolateCurvedSegment(p1, p2, 40);
+  interpolateCurvedSegment(p2, p3, 40);
+  return points;
 }
 
 function calculateApproxDist(p1, p2, p3) {
