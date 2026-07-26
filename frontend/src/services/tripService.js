@@ -1,9 +1,13 @@
 import apiClient from './api';
+import { fallbackPlanTrip } from './fallbackPlanner';
 
 export const tripService = {
   /**
    * Send trip planning parameters to backend API.
-   * @param {Object} tripData - { currentLocation, pickupLocation, dropoffLocation, currentCycleUsed }
+   * If backend is unreachable or throws a Network Error (e.g. Vercel deployment without backend),
+   * seamlessly falls back to the client-side OpenStreetMap + FMCSA HOS engine.
+   *
+   * @param {Object} tripData - { currentLocation, pickupLocation, dropoffLocation, currentCycleUsed, locationDetails }
    * @returns {Promise<Object>} API response data object
    */
   planTrip: async (tripData) => {
@@ -18,9 +22,11 @@ export const tripService = {
       const response = await apiClient.post('/trip/plan', payload);
       return response.data;
     } catch (error) {
-      if (error.response && error.response.data) {
+      console.warn('Backend API connection failed, executing client-side route planner fallback:', error);
+
+      // If it's a validation error response from backend, throw it
+      if (error.response && error.response.status === 400) {
         const resData = error.response.data;
-        // Extract validation errors if present
         if (resData.data && typeof resData.data === 'object') {
           const firstKey = Object.keys(resData.data)[0];
           const errList = resData.data[firstKey];
@@ -31,7 +37,15 @@ export const tripService = {
           throw new Error(resData.message);
         }
       }
-      throw new Error(error.message || 'Server connection error. Please try again.');
+
+      // Execute seamless client-side fallback planner for Network Errors or 5xx server issues
+      try {
+        const fallbackResult = await fallbackPlanTrip(tripData);
+        return fallbackResult;
+      } catch (fallbackErr) {
+        console.error('Fallback Planner Error:', fallbackErr);
+        throw new Error(error.message || 'Server connection error. Please try again.');
+      }
     }
   },
 };
