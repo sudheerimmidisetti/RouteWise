@@ -26,6 +26,7 @@ class StopPlanner:
         current_location: str,
         pickup_location: str,
         dropoff_location: str,
+        waypoints: list = None,
     ) -> dict:
         """
         Calculates fuel stops, applies pickup/dropoff durations, and merges with HOS timeline.
@@ -36,13 +37,18 @@ class StopPlanner:
         stops = []
         sequence_counter = 1
 
-        # Extract origin, pickup, dropoff coordinates from geometry/interpolation
-        curr_coords = geometry[0] if geometry else [40.7128, -74.006]
-        mid_idx = len(geometry) // 2 if geometry else 0
-        pick_coords = geometry[mid_idx] if geometry else [39.9526, -75.1652]
-        drop_coords = geometry[-1] if geometry else [41.8781, -87.6298]
+        # Determine exact waypoint coordinates from waypoints dict list or geometry
+        if waypoints and len(waypoints) >= 3:
+            curr_coords = [waypoints[0]['lat'], waypoints[0]['lon']]
+            pick_coords = [waypoints[1]['lat'], waypoints[1]['lon']]
+            drop_coords = [waypoints[2]['lat'], waypoints[2]['lon']]
+        else:
+            curr_coords = geometry[0] if geometry else [40.7128, -74.006]
+            mid_idx = len(geometry) // 2 if geometry else 0
+            pick_coords = geometry[mid_idx] if geometry else [39.9526, -75.1652]
+            drop_coords = geometry[-1] if geometry else [41.8781, -87.6298]
 
-        # Stop 1: Current Location
+        # Stop 1: Current Location (Pin 1)
         stops.append(
             {
                 "sequence_order": sequence_counter,
@@ -55,7 +61,20 @@ class StopPlanner:
         )
         sequence_counter += 1
 
-        # Calculate fuel stops required (every 1000 miles)
+        # Stop 2: Pickup Location (Pin 2)
+        stops.append(
+            {
+                "sequence_order": sequence_counter,
+                "location_name": pickup_location,
+                "stop_type": "PICKUP",
+                "latitude": pick_coords[0],
+                "longitude": pick_coords[1],
+                "duration_minutes": 60,  # 1 hour
+            }
+        )
+        sequence_counter += 1
+
+        # Calculate fuel stops required (every 1000 miles) between Pickup and Dropoff
         num_fuel_stops = int(total_distance_miles // cls.FUEL_INTERVAL_MILES)
         fuel_stops_data = []
 
@@ -76,26 +95,13 @@ class StopPlanner:
                     }
                 )
 
-        # Stop 2: Pickup Location
-        stops.append(
-            {
-                "sequence_order": sequence_counter,
-                "location_name": pickup_location,
-                "stop_type": "PICKUP",
-                "latitude": pick_coords[0],
-                "longitude": pick_coords[1],
-                "duration_minutes": 60,  # 1 hour
-            }
-        )
-        sequence_counter += 1
-
-        # Insert fuel stops after Pickup if any
+        # Insert fuel stops if any
         for fuel in fuel_stops_data:
             fuel["sequence_order"] = sequence_counter
             stops.append(fuel)
             sequence_counter += 1
 
-        # Stop Last: Dropoff Location
+        # Stop Last: Dropoff Location (Pin 3)
         stops.append(
             {
                 "sequence_order": sequence_counter,

@@ -32,6 +32,7 @@ class TripPlanningService:
         distance_miles = route_info.get("distance_miles", 0.0)
         duration_hours = route_info.get("duration_hours", 0.0)
         geometry = route_info.get("geometry", [])
+        waypoints = route_info.get("waypoints", [])
 
         # Generate stops and merged schedule using StopPlanner
         planner_result = StopPlanner.generate_stops_and_schedule(
@@ -42,6 +43,7 @@ class TripPlanningService:
             current_location=current_location,
             pickup_location=pickup_location,
             dropoff_location=dropoff_location,
+            waypoints=waypoints,
         )
 
         generated_stops = planner_result["stops"]
