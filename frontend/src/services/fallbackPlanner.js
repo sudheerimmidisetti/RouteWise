@@ -3,7 +3,8 @@
  *
  * Runs automatically when the backend server is unreachable (e.g. Vercel deployment without backend URL).
  * Geocodes waypoints via Nominatim, fetches turn-by-turn road geometry from OSM Germany OSRM API leg-by-leg,
- * calculates 1000-mile fuel stops, 11h/14h/8h/70h FMCSA HOS rules, and generates 24-hour daily log sheets.
+ * calculates 1000-mile fuel stops along actual road polyline geometry, 11h/14h/8h/70h FMCSA HOS rules,
+ * and generates 24-hour daily log sheets.
  */
 
 export const fallbackPlanTrip = async (tripData) => {
@@ -173,18 +174,73 @@ function generateCurvedHighwayGeometry(p1, p2, p3) {
   return points;
 }
 
-function calculateApproxDist(p1, p2, p3) {
+function haversineMiles(lat1, lon1, lat2, lon2) {
   const R = 3958.8;
   const toRad = (v) => (v * Math.PI) / 180;
-  const haversine = (c1, c2) => {
-    const dLat = toRad(c2.lat - c1.lat);
-    const dLon = toRad(c2.lon - c1.lon);
-    const a =
-      Math.sin(dLat / 2) ** 2 +
-      Math.cos(toRad(c1.lat)) * Math.cos(toRad(c2.lat)) * Math.sin(dLon / 2) ** 2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  };
-  return Math.round((haversine(p1, p2) + haversine(p2, p3)) * 1.15 * 10) / 10;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function calculateFuelStopsFromGeometry(geometry, fuelIntervalMiles = 1000.0) {
+  if (!geometry || geometry.length < 2) return [];
+
+  const cumDistances = [0.0];
+  let totalDist = 0.0;
+
+  for (let i = 0; i < geometry.length - 1; i++) {
+    const p1 = geometry[i];
+    const p2 = geometry[i + 1];
+    const stepDist = haversineMiles(p1[0], p1[1], p2[0], p2[1]);
+    totalDist += stepDist;
+    cumDistances.push(totalDist);
+  }
+
+  const numStops = Math.floor(totalDist / fuelIntervalMiles);
+  const fuelStops = [];
+
+  for (let f = 1; f <= numStops; f++) {
+    const targetMiles = f * fuelIntervalMiles;
+
+    for (let i = 0; i < cumDistances.length - 1; i++) {
+      if (cumDistances[i] <= targetMiles && targetMiles <= cumDistances[i + 1]) {
+        const segStartDist = cumDistances[i];
+        const segEndDist = cumDistances[i + 1];
+        const segLength = segEndDist - segStartDist;
+
+        const p1 = geometry[i];
+        const p2 = geometry[i + 1];
+
+        let lat, lon;
+        if (segLength > 0) {
+          const fraction = (targetMiles - segStartDist) / segLength;
+          lat = p1[0] + fraction * (p2[0] - p1[0]);
+          lon = p1[1] + fraction * (p2[1] - p1[1]);
+        } else {
+          lat = p1[0];
+          lon = p1[1];
+        }
+
+        fuelStops.push({
+          location_name: `Fuel Stop #${f} (${Math.round(targetMiles)} mi)`,
+          stop_type: 'FUEL',
+          latitude: Math.round(lat * 1e6) / 1e6,
+          longitude: Math.round(lon * 1e6) / 1e6,
+          duration_minutes: 30,
+        });
+        break;
+      }
+    }
+  }
+
+  return fuelStops;
+}
+
+function calculateApproxDist(p1, p2, p3) {
+  return Math.round((haversineMiles(p1.lat, p1.lon, p2.lat, p2.lon) + haversineMiles(p2.lat, p2.lon, p3.lat, p3.lon)) * 1.15 * 10) / 10;
 }
 
 function generateStopsAndTimeline(distMiles, durHours, initialCycle, geometry, currName, pickName, dropName, currCoords, pickCoords, dropCoords) {
@@ -193,17 +249,13 @@ function generateStopsAndTimeline(distMiles, durHours, initialCycle, geometry, c
     { sequence_order: 2, location_name: pickName, stop_type: 'PICKUP', latitude: pickCoords.lat, longitude: pickCoords.lon, duration_minutes: 60 },
   ];
 
-  const fuelStopsCount = Math.floor(distMiles / 1000);
-  for (let i = 1; i <= fuelStopsCount; i++) {
-    stops.push({
-      sequence_order: stops.length + 1,
-      location_name: `Fuel Stop #${i} (${i * 1000}m)`,
-      stop_type: 'FUEL',
-      latitude: currCoords.lat + (dropCoords.lat - currCoords.lat) * (i / (fuelStopsCount + 1)),
-      longitude: currCoords.lon + (dropCoords.lon - currCoords.lon) * (i / (fuelStopsCount + 1)),
-      duration_minutes: 30,
-    });
-  }
+  // Calculate fuel stops by walking cumulative distance along actual route polyline geometry
+  const fuelStopsData = calculateFuelStopsFromGeometry(geometry, 1000.0);
+
+  fuelStopsData.forEach((fuel) => {
+    fuel.sequence_order = stops.length + 1;
+    stops.push(fuel);
+  });
 
   stops.push({
     sequence_order: stops.length + 1,

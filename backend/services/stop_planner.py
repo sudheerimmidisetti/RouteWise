@@ -5,7 +5,7 @@ from .hos_engine import HOSEngine
 class StopPlanner:
     """
     Stop Planner service responsible for scheduling:
-    - Fuel stops every 1000 miles (0.5 hour duration)
+    - Fuel stops every 1000 miles (0.5 hour duration) placed along actual route geometry
     - Pickup stop (1.0 hour duration)
     - Dropoff stop (1.0 hour duration)
     - Merging operational stops with HOSEngine timeline into an ordered schedule
@@ -15,6 +15,75 @@ class StopPlanner:
     FUEL_DURATION_HOURS = 0.5
     PICKUP_DURATION_HOURS = 1.0
     DROPOFF_DURATION_HOURS = 1.0
+
+    @classmethod
+    def haversine_miles(cls, lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+        """Calculates distance between two lat/lon coordinates in miles using Haversine formula."""
+        R = 3958.8  # Earth radius in miles
+        dlat = math.radians(lat2 - lat1)
+        dlon = math.radians(lon2 - lon1)
+        a = (
+            math.sin(dlat / 2.0) ** 2
+            + math.cos(math.radians(lat1))
+            * math.cos(math.radians(lat2))
+            * math.sin(dlon / 2.0) ** 2
+        )
+        c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
+        return R * c
+
+    @classmethod
+    def generate_fuel_stops_from_geometry(cls, geometry: list, fuel_interval_miles: float = 1000.0) -> list:
+        """
+        Walks through the actual route polyline geometry [latitude, longitude] using cumulative distance.
+        Places a fuel stop every 1000 miles along the exact road path.
+        """
+        if not geometry or len(geometry) < 2:
+            return []
+
+        cum_distances = [0.0]
+        total_dist = 0.0
+
+        for i in range(len(geometry) - 1):
+            p1 = geometry[i]
+            p2 = geometry[i + 1]
+            step_dist = cls.haversine_miles(p1[0], p1[1], p2[0], p2[1])
+            total_dist += step_dist
+            cum_distances.append(total_dist)
+
+        num_stops = int(total_dist // fuel_interval_miles)
+        fuel_stops = []
+
+        for f in range(1, num_stops + 1):
+            target_miles = f * fuel_interval_miles
+
+            for i in range(len(cum_distances) - 1):
+                if cum_distances[i] <= target_miles <= cum_distances[i + 1]:
+                    seg_start_dist = cum_distances[i]
+                    seg_end_dist = cum_distances[i + 1]
+                    seg_length = seg_end_dist - seg_start_dist
+
+                    p1 = geometry[i]
+                    p2 = geometry[i + 1]
+
+                    if seg_length > 0:
+                        fraction = (target_miles - seg_start_dist) / seg_length
+                        lat = p1[0] + fraction * (p2[0] - p1[0])
+                        lon = p1[1] + fraction * (p2[1] - p1[1])
+                    else:
+                        lat, lon = p1[0], p1[1]
+
+                    fuel_stops.append(
+                        {
+                            "location_name": f"Fuel Stop #{f} ({int(target_miles)} mi)",
+                            "stop_type": "FUEL",
+                            "latitude": round(lat, 6),
+                            "longitude": round(lon, 6),
+                            "duration_minutes": 30,
+                        }
+                    )
+                    break
+
+        return fuel_stops
 
     @classmethod
     def generate_stops_and_schedule(
@@ -29,10 +98,8 @@ class StopPlanner:
         waypoints: list = None,
     ) -> dict:
         """
-        Calculates fuel stops, applies pickup/dropoff durations, and merges with HOS timeline.
-        Returns dict containing:
-        - stops: list of stop objects with sequence_order, location_name, stop_type, lat, lon
-        - timeline: merged HOS schedule list
+        Calculates fuel stops along actual road geometry, applies pickup/dropoff durations,
+        and merges with HOS timeline.
         """
         stops = []
         sequence_counter = 1
@@ -74,26 +141,8 @@ class StopPlanner:
         )
         sequence_counter += 1
 
-        # Calculate fuel stops required (every 1000 miles) between Pickup and Dropoff
-        num_fuel_stops = int(total_distance_miles // cls.FUEL_INTERVAL_MILES)
-        fuel_stops_data = []
-
-        if num_fuel_stops > 0 and len(geometry) > 2:
-            geo_len = len(geometry)
-            step_size = geo_len // (num_fuel_stops + 1)
-            for f in range(1, num_fuel_stops + 1):
-                idx = min(f * step_size, geo_len - 1)
-                pt = geometry[idx]
-                fuel_stop_name = f"Fuel Stop #{f} ({int(f * cls.FUEL_INTERVAL_MILES)} mi)"
-                fuel_stops_data.append(
-                    {
-                        "location_name": fuel_stop_name,
-                        "stop_type": "FUEL",
-                        "latitude": pt[0],
-                        "longitude": pt[1],
-                        "duration_minutes": 30,
-                    }
-                )
+        # Calculate fuel stops along the actual route polyline geometry
+        fuel_stops_data = cls.generate_fuel_stops_from_geometry(geometry, cls.FUEL_INTERVAL_MILES)
 
         # Insert fuel stops if any
         for fuel in fuel_stops_data:
