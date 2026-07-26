@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import LocationAutocomplete from './LocationAutocomplete';
+import LocationSearch from './LocationSearch';
 
 /**
- * TripForm component for collecting commercial trip parameters with client-side validation
- * and real-time location autocomplete geocoding search.
+ * TripForm component for collecting commercial trip parameters with client-side validation,
+ * location resolution tracking, and real-time geocoding search.
  *
  * Fields: Current Location, Pickup Location, Dropoff Location, Current Cycle Used.
  */
@@ -15,20 +15,49 @@ const TripForm = ({ onSubmit, onReset }) => {
     currentCycleUsed: '0',
   });
 
+  // Track resolved location objects (lat, lon, city, state, country)
+  const [locationDetails, setLocationDetails] = useState({
+    currentLocation: null,
+    pickupLocation: null,
+    dropoffLocation: null,
+  });
+
   const [errors, setErrors] = useState({});
 
   const validate = () => {
     const newErrors = {};
+
+    // 1. Current Location Validation
     if (!formData.currentLocation.trim()) {
       newErrors.currentLocation = 'Current location is required.';
-    }
-    if (!formData.pickupLocation.trim()) {
-      newErrors.pickupLocation = 'Pickup location is required.';
-    }
-    if (!formData.dropoffLocation.trim()) {
-      newErrors.dropoffLocation = 'Dropoff location is required.';
+    } else if (
+      !locationDetails.currentLocation &&
+      formData.currentLocation.trim().length > 0
+    ) {
+      newErrors.currentLocation = 'Please select a valid location from the dropdown suggestions.';
     }
 
+    // 2. Pickup Location Validation
+    if (!formData.pickupLocation.trim()) {
+      newErrors.pickupLocation = 'Pickup location is required.';
+    } else if (
+      !locationDetails.pickupLocation &&
+      formData.pickupLocation.trim().length > 0
+    ) {
+      newErrors.pickupLocation = 'Please select a valid location from the dropdown suggestions.';
+    }
+
+    // 3. Dropoff Location Validation
+    if (!formData.dropoffLocation.trim()) {
+      newErrors.dropoffLocation = 'Dropoff location is required.';
+    } else if (
+      !locationDetails.dropoffLocation &&
+      formData.dropoffLocation.trim().length > 0
+    ) {
+      newErrors.dropoffLocation = 'Please select a valid location from the dropdown suggestions.';
+    }
+
+    // 4. Current Cycle Used Validation
     const cycleVal = parseFloat(formData.currentCycleUsed);
     if (isNaN(cycleVal)) {
       newErrors.currentCycleUsed = 'Cycle hours must be a number.';
@@ -40,7 +69,25 @@ const TripForm = ({ onSubmit, onReset }) => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleChange = (e) => {
+  const handleLocationChange = (e) => {
+    const { name, value, location } = e.target;
+
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+
+    setLocationDetails((prev) => ({
+      ...prev,
+      [name]: location || null,
+    }));
+
+    if (errors[name]) {
+      setErrors((prev) => ({ ...prev, [name]: '' }));
+    }
+  };
+
+  const handleCycleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({
       ...prev,
@@ -54,18 +101,25 @@ const TripForm = ({ onSubmit, onReset }) => {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (validate() && onSubmit) {
-      onSubmit(formData);
+      onSubmit({
+        ...formData,
+        locationDetails,
+      });
     }
   };
 
   const handleReset = () => {
-    const resetData = {
+    setFormData({
       currentLocation: '',
       pickupLocation: '',
       dropoffLocation: '',
       currentCycleUsed: '0',
-    };
-    setFormData(resetData);
+    });
+    setLocationDetails({
+      currentLocation: null,
+      pickupLocation: null,
+      dropoffLocation: null,
+    });
     setErrors({});
     if (onReset) {
       onReset();
@@ -91,13 +145,13 @@ const TripForm = ({ onSubmit, onReset }) => {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-5" noValidate>
-        {/* 1. Current Location Field (Autocomplete) */}
-        <LocationAutocomplete
+        {/* 1. Current Location Field */}
+        <LocationSearch
           label="Current Location"
           name="currentLocation"
           value={formData.currentLocation}
-          onChange={handleChange}
-          placeholder="e.g. New York, NY"
+          onChange={handleLocationChange}
+          placeholder="e.g. New York, NY or Airport Name"
           error={errors.currentLocation}
           icon={
             <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -107,13 +161,13 @@ const TripForm = ({ onSubmit, onReset }) => {
           }
         />
 
-        {/* 2. Pickup Location Field (Autocomplete) */}
-        <LocationAutocomplete
+        {/* 2. Pickup Location Field */}
+        <LocationSearch
           label="Pickup Location"
           name="pickupLocation"
           value={formData.pickupLocation}
-          onChange={handleChange}
-          placeholder="e.g. Philadelphia, PA"
+          onChange={handleLocationChange}
+          placeholder="e.g. Philadelphia, PA or City Name"
           error={errors.pickupLocation}
           icon={
             <svg className="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -122,13 +176,13 @@ const TripForm = ({ onSubmit, onReset }) => {
           }
         />
 
-        {/* 3. Dropoff Location Field (Autocomplete) */}
-        <LocationAutocomplete
+        {/* 3. Dropoff Location Field */}
+        <LocationSearch
           label="Dropoff Location"
           name="dropoffLocation"
           value={formData.dropoffLocation}
-          onChange={handleChange}
-          placeholder="e.g. Chicago, IL"
+          onChange={handleLocationChange}
+          placeholder="e.g. Chicago, IL or Destination"
           error={errors.dropoffLocation}
           icon={
             <svg className="w-4 h-4 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -161,7 +215,7 @@ const TripForm = ({ onSubmit, onReset }) => {
                 max="70"
                 step="0.5"
                 value={formData.currentCycleUsed}
-                onChange={handleChange}
+                onChange={handleCycleChange}
                 placeholder="e.g. 0"
                 className={`w-full pl-10 pr-4 py-2.5 bg-slate-950/80 border rounded-xl text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition placeholder:text-slate-600 ${
                   errors.currentCycleUsed
@@ -177,7 +231,7 @@ const TripForm = ({ onSubmit, onReset }) => {
               max="70"
               step="0.5"
               value={formData.currentCycleUsed || 0}
-              onChange={handleChange}
+              onChange={handleCycleChange}
               className="w-full accent-indigo-500 bg-slate-900 cursor-pointer h-1.5 rounded-lg"
             />
           </div>
