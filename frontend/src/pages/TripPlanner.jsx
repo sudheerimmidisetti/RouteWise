@@ -26,7 +26,12 @@ const TripPlanner = () => {
       }
     } catch (err) {
       console.error('Trip Planning Error:', err);
-      const detail = err?.response?.data?.message || err?.message || 'Failed to calculate route geometry.';
+      let detail = err?.response?.data?.message || err?.message || 'Failed to calculate route geometry.';
+
+      if (err.message === 'Network Error' || !err.response) {
+        detail = 'Network Error: Unable to connect to the backend API server. If deployed on Vercel, set VITE_API_BASE_URL in Vercel project settings to your backend URL (e.g. https://routewise-backend.onrender.com/api). If running locally, ensure backend is active at http://localhost:8000.';
+      }
+
       setErrorMessage(detail);
       setViewState('error');
     }

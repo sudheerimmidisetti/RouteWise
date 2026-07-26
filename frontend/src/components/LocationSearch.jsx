@@ -1,17 +1,18 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 /**
- * LocationSearch component providing high-accuracy location autocomplete.
+ * Production-Grade LocationSearch Component
  *
- * Features:
- * - 350ms debouncing & AbortController request cancellation
- * - In-memory session result caching (cacheRef)
- * - 2-line clean dropdown display (Primary Name / Secondary City, State, Country)
- * - Matching query text highlighting
- * - Full keyboard navigation (Up, Down, Enter, Escape)
- * - Click-outside detection
- * - Robust error handling (Network errors & No locations found)
- * - Selection validation tracking (latitude, longitude, displayName, city, state, country)
+ * Implements high-accuracy geocoding autocomplete for commercial route planning:
+ * - Prioritizes Cities, Towns, Municipalities, Airports & Freight Hubs over minor POIs
+ *   (filters out restaurants, shops, parking lots, and individual houses).
+ * - Dual Nominatim search (Settlements + General Places) with 350ms debouncing.
+ * - AbortController request cancellation to prevent race conditions.
+ * - In-memory session result caching (cacheRef).
+ * - 2-line clean dropdown display (Line 1: Primary City/Name, Line 2: State, Country).
+ * - Matching query text highlighting.
+ * - Full keyboard navigation (Up, Down, Enter, Escape).
+ * - Strict selection validation tracking.
  */
 const LocationSearch = ({
   label,
@@ -53,9 +54,13 @@ const LocationSearch = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Format Nominatim API item into Primary Name and Secondary Location (City, State, Country)
-  const parseLocationItem = (item) => {
+  /**
+   * Intelligently parses Nominatim API item into Primary Name and Secondary Location
+   */
+  const parseLocationItem = (item, searchTerm = '') => {
     const addr = item.address || {};
+    const cls = (item.class || '').toLowerCase();
+    const type = (item.type || '').toLowerCase();
 
     const city =
       addr.city ||
@@ -67,25 +72,62 @@ const LocationSearch = ({
     const state = addr.state || addr.region || addr.province || '';
     const country = addr.country || '';
 
-    // Primary name: item name, airport, building, or city
-    let primaryName =
-      item.name ||
-      addr.aeroway ||
-      addr.amenity ||
-      city ||
-      item.display_name.split(',')[0] ||
-      '';
+    let primaryName = '';
+    let secondaryParts = [];
 
-    // Secondary location parts
-    const secondaryParts = [];
-    if (city && city.toLowerCase() !== primaryName.toLowerCase()) {
-      secondaryParts.push(city);
+    // Is it a city, town, village, or administrative boundary?
+    const isSettlement =
+      cls === 'place' ||
+      cls === 'boundary' ||
+      ['city', 'town', 'village', 'municipality', 'county', 'administrative', 'state', 'country'].includes(type);
+
+    if (isSettlement) {
+      primaryName = item.name || city || item.display_name.split(',')[0];
+      if (state && state.toLowerCase() !== primaryName.toLowerCase()) {
+        secondaryParts.push(state);
+      }
+      if (country) {
+        secondaryParts.push(country);
+      }
+    } else {
+      // For Airports, Ports, Landmarks, Addresses
+      primaryName = item.name || item.display_name.split(',')[0];
+      if (city && city.toLowerCase() !== primaryName.toLowerCase()) {
+        secondaryParts.push(city);
+      }
+      if (state) secondaryParts.push(state);
+      if (country) secondaryParts.push(country);
     }
-    if (state) secondaryParts.push(state);
-    if (country) secondaryParts.push(country);
 
     const secondaryText = secondaryParts.join(', ');
     const fullDisplayName = secondaryText ? `${primaryName}, ${secondaryText}` : primaryName;
+
+    // Calculate ranking score (Lower = Higher Priority)
+    let rankScore = 5;
+    const cleanSearch = searchTerm.trim().toLowerCase();
+    const cleanPrimary = primaryName.toLowerCase();
+
+    // Minor noise POIs to penalize or filter
+    const isMinorNoise = [
+      'amenity',
+      'shop',
+      'tourism',
+      'leisure',
+      'building',
+      'parking',
+    ].includes(cls) || ['restaurant', 'cafe', 'fast_food', 'house', 'parking'].includes(type);
+
+    if (isSettlement) {
+      if (cleanPrimary === cleanSearch) rankScore = 0; // Exact city match
+      else if (cleanPrimary.startsWith(cleanSearch)) rankScore = 1; // Starts with query
+      else rankScore = 2; // Contains query
+    } else if (cls === 'aeroway' || type === 'aerodrome' || type === 'airport') {
+      rankScore = 2; // Airports
+    } else if (isMinorNoise) {
+      rankScore = 9; // Low priority noise
+    } else {
+      rankScore = 4;
+    }
 
     return {
       primaryName,
@@ -96,11 +138,16 @@ const LocationSearch = ({
       city,
       state,
       country,
-      rawType: item.type || item.class || '',
+      rawClass: cls,
+      rawType: type,
+      rankScore,
+      isMinorNoise,
     };
   };
 
-  // Perform Geocoding Search with AbortController and Caching
+  /**
+   * Dual Geocoding Search: Queries settlements + places, filters noise, ranks results
+   */
   const fetchLocations = useCallback(async (searchTerm) => {
     const cleanTerm = searchTerm.trim().toLowerCase();
     if (cleanTerm.length < 2) {
@@ -119,7 +166,7 @@ const LocationSearch = ({
       return;
     }
 
-    // Cancel any ongoing in-flight HTTP request to prevent race conditions
+    // Cancel any in-flight HTTP request to prevent race conditions
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
@@ -129,23 +176,36 @@ const LocationSearch = ({
     setApiError(null);
 
     try {
-      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
+      // Query 1: Settlement search (cities, towns, villages)
+      const settlementUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
+        searchTerm
+      )}&format=json&addressdetails=1&featuretype=settlement&limit=6`;
+
+      // Query 2: General location search
+      const generalUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
         searchTerm
       )}&format=json&addressdetails=1&limit=8`;
 
-      const response = await fetch(url, {
-        signal: abortControllerRef.current.signal,
-        headers: {
-          'User-Agent': 'RouteWise-App/1.0',
-        },
-      });
+      const signal = abortControllerRef.current.signal;
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+      const [settlementRes, generalRes] = await Promise.allSettled([
+        fetch(settlementUrl, { signal, headers: { 'User-Agent': 'RouteWise-App/1.0' } }),
+        fetch(generalUrl, { signal, headers: { 'User-Agent': 'RouteWise-App/1.0' } }),
+      ]);
+
+      let rawData = [];
+
+      if (settlementRes.status === 'fulfilled' && settlementRes.value.ok) {
+        const sData = await settlementRes.value.json();
+        rawData.push(...sData);
       }
 
-      const data = await response.json();
-      const parsedItems = data.map(parseLocationItem);
+      if (generalRes.status === 'fulfilled' && generalRes.value.ok) {
+        const gData = await generalRes.value.json();
+        rawData.push(...gData);
+      }
+
+      const parsedItems = rawData.map((item) => parseLocationItem(item, searchTerm));
 
       // Deduplicate results based on primaryName + secondaryText
       const uniqueSuggestions = [];
@@ -153,28 +213,28 @@ const LocationSearch = ({
 
       parsedItems.forEach((item) => {
         const key = `${item.primaryName.toLowerCase()}|${item.secondaryText.toLowerCase()}`;
-        if (!seenKeys.has(key)) {
+        if (!seenKeys.has(key) && !isNaN(item.latitude) && !isNaN(item.longitude)) {
           seenKeys.add(key);
           uniqueSuggestions.push(item);
         }
       });
 
-      // Prioritize city/town/airport places over minor streets
-      uniqueSuggestions.sort((a, b) => {
-        const aIsCity = ['city', 'town', 'administrative', 'aeroway'].includes(a.rawType);
-        const bIsCity = ['city', 'town', 'administrative', 'aeroway'].includes(b.rawType);
-        if (aIsCity && !bIsCity) return -1;
-        if (!aIsCity && bIsCity) return 1;
-        return 0;
-      });
+      // Filter out minor noise (restaurants/parking) if major city/town places exist
+      const majorPlaces = uniqueSuggestions.filter((item) => !item.isMinorNoise);
+      const finalSuggestions = majorPlaces.length > 0 ? majorPlaces : uniqueSuggestions;
 
-      cacheRef.current[cleanTerm] = uniqueSuggestions;
-      setSuggestions(uniqueSuggestions);
+      // Sort by rank score (Cities/Airports first)
+      finalSuggestions.sort((a, b) => a.rankScore - b.rankScore);
+
+      // Limit to top 6 results
+      const sliced = finalSuggestions.slice(0, 6);
+
+      cacheRef.current[cleanTerm] = sliced;
+      setSuggestions(sliced);
       setIsOpen(true);
     } catch (err) {
       if (err.name === 'AbortError') {
-        // Request aborted due to newer keystroke, ignore
-        return;
+        return; // Request aborted due to new input, ignore
       }
       console.warn('Location Search API Error:', err);
       setApiError('Unable to fetch locations. Please try again.');
@@ -377,7 +437,7 @@ const LocationSearch = ({
                       : 'text-slate-200 hover:bg-slate-800/80'
                   }`}
                 >
-                  {/* Line 1: Primary Name */}
+                  {/* Line 1: Primary Name (City / Airport / Place) */}
                   <div className="font-bold text-xs flex items-center justify-between">
                     <span className="truncate">{renderHighlightedText(item.primaryName, query)}</span>
                     {!isNaN(item.latitude) && !isNaN(item.longitude) && (
