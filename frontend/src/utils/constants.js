@@ -1,0 +1,9 @@
+export const APP_NAME = 'RouteWise';
+export const APP_VERSION = '1.0.0';
+export const HOS_MAX_DRIVING_HOURS = 11;
+export const HOS_MAX_DUTY_WINDOW_HOURS = 14;
+export const HOS_BREAK_TRIGGER_HOURS = 8;
+export const HOS_BREAK_DURATION_MINUTES = 30;
+export const HOS_REST_DURATION_HOURS = 10;
+export const HOS_CYCLE_LIMIT_HOURS = 70;
+export const FUEL_STOP_MILEAGE_INTERVAL = 1000;
