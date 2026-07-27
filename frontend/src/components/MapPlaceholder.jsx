@@ -1,7 +1,6 @@
 import React, { useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { getStopTypeBadge } from '../utils/uiHelpers';
 
 // Fix default leaflet marker icons in Vite
 delete L.Icon.Default.prototype._getIconUrl;
@@ -12,33 +11,29 @@ L.Icon.Default.mergeOptions({
 });
 
 /**
- * Creates custom pin pointer Leaflet icons with exact color matching:
- * - Current Location: #00D492 (Emerald Teal)
- * - Pickup Location:  #00D3F3 (Cyan)
- * - Dropoff Location: #FF637E (Coral Rose)
- * - Fuel Stop:        #F59E0B (Amber Gold)
+ * Creates custom pin pointer Leaflet icons with location pin symbols instead of numbers:
+ * - Current Location: #00D492 (Emerald Teal) + Location Pin Symbol
+ * - Pickup Location:  #00D3F3 (Cyan) + Location Pin Symbol
+ * - Dropoff Location: #FF637E (Coral Rose) + Location Pin Symbol
+ * - Fuel Stop:        #F59E0B (Amber Gold) + Fuel Symbol ⛽
  */
-const createCustomPinIcon = (stopType, sequenceOrder) => {
+const createCustomPinIcon = (stopType) => {
   let pinColor = '#6366f1'; // Default Indigo
-  let pinLabel = sequenceOrder ? sequenceOrder.toString() : '•';
-  let badgeText = stopType;
+  let iconSvg = `
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+    </svg>
+  `;
 
   if (stopType === 'CURRENT') {
     pinColor = '#00D492';
-    pinLabel = '1';
-    badgeText = 'START';
   } else if (stopType === 'PICKUP') {
     pinColor = '#00D3F3';
-    pinLabel = '2';
-    badgeText = 'PICKUP';
   } else if (stopType === 'DROPOFF') {
     pinColor = '#FF637E';
-    pinLabel = sequenceOrder ? sequenceOrder.toString() : '3';
-    badgeText = 'DROPOFF';
   } else if (stopType === 'FUEL') {
     pinColor = '#F59E0B';
-    pinLabel = '⛽';
-    badgeText = 'FUEL';
+    iconSvg = '<span style="font-size: 13px; line-height: 1;">⛽</span>';
   }
 
   return L.divIcon({
@@ -48,9 +43,6 @@ const createCustomPinIcon = (stopType, sequenceOrder) => {
         <div style="
           background: ${pinColor};
           color: #ffffff;
-          font-weight: 800;
-          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-          font-size: 11px;
           width: 32px;
           height: 32px;
           border-radius: 50%;
@@ -60,7 +52,7 @@ const createCustomPinIcon = (stopType, sequenceOrder) => {
           box-shadow: 0 4px 14px ${pinColor}99, 0 0 0 3px #ffffff;
           transition: transform 0.2s ease;
         ">
-          ${pinLabel}
+          ${iconSvg}
         </div>
         <div style="
           width: 0;
@@ -177,9 +169,8 @@ const MapPlaceholder = ({ geometry = [], stops = [] }) => {
             stops.map((stop, idx) => {
               if (!stop.latitude || !stop.longitude) return null;
               
-              const pinIcon = createCustomPinIcon(stop.stop_type, stop.sequence_order || idx + 1);
+              const pinIcon = createCustomPinIcon(stop.stop_type);
 
-              let headerBg = 'bg-slate-800 text-slate-100';
               let badgeBg = '#6366f1';
               let roleName = 'Waypoint';
 
