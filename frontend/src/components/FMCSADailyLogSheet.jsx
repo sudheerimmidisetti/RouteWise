@@ -10,8 +10,6 @@ const FMCSADailyLogSheet = ({ log = {}, manifestDetails = {} }) => {
     day_number = 1,
     date = new Date().toISOString().split('T')[0],
     miles_today = 0,
-    carrier_name = 'RouteWise Logistics',
-    main_office_address = '100 Transport Way, Suite 400, Chicago, IL 60601',
     co_driver = 'N/A',
     driving_hours = 0,
     on_duty_hours = 0,
@@ -29,6 +27,9 @@ const FMCSADailyLogSheet = ({ log = {}, manifestDetails = {} }) => {
   const shipping_number = manifestDetails.shipping_number || log.shipping_number || 'AUTO-0001';
   const shipper_commodity = manifestDetails.shipper_commodity || log.shipper_commodity || 'GENERAL FREIGHT / DRY VAN';
   const driver_signature = manifestDetails.driver_signature || log.driver_signature || driver_name;
+  const carrier_name = manifestDetails.carrier_name || log.carrier_name || 'RouteWise Logistics';
+  const main_office_address = manifestDetails.main_office_address || log.main_office_address || '100 Transport Way, Suite 400, Chicago, IL 60601';
+  const home_terminal_address = manifestDetails.home_terminal_address || manifestDetails.main_office_address || log.home_terminal_address || log.main_office_address || '100 Transport Way, Suite 400, Chicago, IL 60601';
 
   const totals = {
     off_duty: off_duty_hours,
@@ -144,7 +145,7 @@ const FMCSADailyLogSheet = ({ log = {}, manifestDetails = {} }) => {
 
           <div>
             <span className="block text-[10px] font-bold text-black uppercase">Home Terminal Address</span>
-            <div className="border-b border-black pb-1 font-semibold text-slate-900">{main_office_address}</div>
+            <div className="border-b border-black pb-1 font-semibold text-slate-900">{home_terminal_address}</div>
           </div>
         </div>
       </div>

@@ -14,13 +14,16 @@ const TripPlanner = () => {
   const [tripData, setTripData] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
 
-  // Live Driver & Shipping Manifest Form State
+  // Live Driver, Shipping Manifest & Carrier Terminal Form State
   const [manifestDetails, setManifestDetails] = useState({
     driver_name: 'Demo Driver',
     vehicle_number: 'TRK-001 / Trailer #TR-88',
     shipping_number: 'AUTO-0001',
     shipper_commodity: 'GENERAL FREIGHT / DRY VAN',
     driver_signature: 'Demo Driver',
+    carrier_name: 'RouteWise Logistics',
+    main_office_address: '100 Transport Way, Suite 400, Chicago, IL 60601',
+    home_terminal_address: '100 Transport Way, Suite 400, Chicago, IL 60601',
   });
 
   const handleFormSubmit = async (formData) => {
@@ -82,7 +85,7 @@ const TripPlanner = () => {
             <TripForm onSubmit={handleFormSubmit} onReset={handleFormReset} />
             <TripSummaryPlaceholder data={tripData} />
             
-            {/* Manifest Details Input Form renders ONLY when trip & log sheets are generated */}
+            {/* Manifest & Carrier Details Form renders ONLY when trip & log sheets are generated */}
             {hasGeneratedTrip && (
               <DriverManifestForm details={manifestDetails} onChange={setManifestDetails} />
             )}
