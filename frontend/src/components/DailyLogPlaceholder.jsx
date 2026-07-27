@@ -23,18 +23,6 @@ const DailyLogPlaceholder = ({ logs, dailyLogs, isLoading = false }) => {
   const totalSheets = hasLogs ? actualLogs.length : 0;
   const currentLog = hasLogs ? actualLogs[selectedDayIdx] || actualLogs[0] : null;
 
-  const handlePrev = () => {
-    if (selectedDayIdx > 0) {
-      setSelectedDayIdx((prev) => prev - 1);
-    }
-  };
-
-  const handleNext = () => {
-    if (selectedDayIdx < totalSheets - 1) {
-      setSelectedDayIdx((prev) => prev + 1);
-    }
-  };
-
   /**
    * Handles exporting ONLY the Driver Daily Log Sheets to a multi-page PDF document
    */
@@ -167,54 +155,6 @@ const DailyLogPlaceholder = ({ logs, dailyLogs, isLoading = false }) => {
         ) : (
           /* Log Sheet View */
           <div className="mt-6 space-y-6">
-            {/* Paginated Navigation Bar */}
-            <div className="no-print flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-950/90 p-3 rounded-xl border border-slate-800">
-              {/* Previous Button */}
-              <button
-                type="button"
-                onClick={handlePrev}
-                disabled={selectedDayIdx === 0}
-                className={`px-4 py-2 rounded-xl text-xs font-mono font-bold transition flex items-center space-x-1.5 ${
-                  selectedDayIdx === 0
-                    ? 'bg-slate-900 text-slate-600 border border-slate-800 cursor-not-allowed'
-                    : 'bg-slate-800 hover:bg-indigo-600 text-slate-200 hover:text-white border border-slate-700 shadow-md'
-                }`}
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-                <span>Previous Sheet</span>
-              </button>
-
-              {/* Page Indicator Badge */}
-              <div className="text-center font-mono text-xs">
-                <span className="text-slate-400">Sheet </span>
-                <span className="font-bold text-indigo-400">{selectedDayIdx + 1}</span>
-                <span className="text-slate-400"> of </span>
-                <span className="font-bold text-slate-200">{totalSheets}</span>
-                <span className="text-slate-500 font-semibold ml-2">
-                  (Day #{currentLog?.day_number} — {currentLog?.date})
-                </span>
-              </div>
-
-              {/* Next Button */}
-              <button
-                type="button"
-                onClick={handleNext}
-                disabled={selectedDayIdx >= totalSheets - 1}
-                className={`px-4 py-2 rounded-xl text-xs font-mono font-bold transition flex items-center space-x-1.5 ${
-                  selectedDayIdx >= totalSheets - 1
-                    ? 'bg-slate-900 text-slate-600 border border-slate-800 cursor-not-allowed'
-                    : 'bg-slate-800 hover:bg-indigo-600 text-slate-200 hover:text-white border border-slate-700 shadow-md'
-                }`}
-              >
-                <span>Next Sheet</span>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
-            </div>
-
             {/* Quick Day Tab Shortcuts */}
             {totalSheets > 1 && (
               <div className="no-print flex items-center space-x-2 overflow-x-auto pb-1">
@@ -224,9 +164,9 @@ const DailyLogPlaceholder = ({ logs, dailyLogs, isLoading = false }) => {
                     key={idx}
                     type="button"
                     onClick={() => setSelectedDayIdx(idx)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-mono font-semibold transition shrink-0 ${
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-mono font-semibold transition shrink-0 ${
                       selectedDayIdx === idx
-                        ? 'bg-indigo-950 text-indigo-300 border border-indigo-700'
+                        ? 'bg-indigo-950 text-indigo-300 border border-indigo-700 shadow-sm'
                         : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border border-slate-800'
                     }`}
                   >
