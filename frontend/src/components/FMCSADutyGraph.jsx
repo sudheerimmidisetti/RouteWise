@@ -14,6 +14,7 @@ import React from 'react';
  *   4. On Duty (not driving)
  * - Ultra-precise continuous vector step-function duty path starting at hour 0.0 and ending at hour 24.0
  * - Exact vertical transitions at duty change timestamps
+ * - preserveAspectRatio="xMinYMin meet" for rock-solid grid & status bar alignment across full window lengths
  * - Right-side row total hours column & grand total 24.0 validation box
  */
 const FMCSADutyGraph = ({ segments = [], totals = {} }) => {
@@ -116,10 +117,11 @@ const FMCSADutyGraph = ({ segments = [], totals = {} }) => {
 
   return (
     <div className="w-full overflow-x-auto bg-white p-2 border border-black font-sans text-black select-none">
-      <div className="min-w-[800px]">
+      <div className="w-full min-w-[780px]">
         <svg
           viewBox={`0 0 ${svgWidth} ${graphTop + 4 * rowHeight + 1}`}
-          className="w-full h-auto"
+          className="w-full h-auto block"
+          preserveAspectRatio="xMinYMin meet"
           shapeRendering="geometricPrecision"
         >
           {/* Top Black Header Bar */}
