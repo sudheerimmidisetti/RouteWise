@@ -96,29 +96,35 @@ const Navbar = () => {
             </Link>
           </nav>
 
-          {/* Interactive Theme Toggle Switch */}
+          {/* Premium iOS-Style Glassmorphism Sliding Toggle Switch */}
           <button
             type="button"
             onClick={toggleTheme}
             title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
             aria-label="Toggle Webpage Theme Mode"
-            className="relative p-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-white/10 text-slate-300 transition-all duration-200 flex items-center space-x-1.5 group"
+            className={`relative w-14 h-7 rounded-full p-1 transition-all duration-300 backdrop-blur-md border shadow-inner flex items-center cursor-pointer group ${
+              theme === 'light'
+                ? 'bg-amber-400/20 border-amber-500/40 shadow-amber-500/10'
+                : 'bg-slate-900/90 border-indigo-500/30 shadow-indigo-500/10'
+            }`}
           >
-            {theme === 'dark' ? (
-              <>
-                <svg className="w-4 h-4 text-amber-400 group-hover:rotate-45 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+            <div
+              className={`w-5 h-5 rounded-full flex items-center justify-center transition-all duration-300 transform shadow-md ${
+                theme === 'light'
+                  ? 'translate-x-7 bg-amber-400 text-slate-950 shadow-amber-400/50'
+                  : 'translate-x-0 bg-indigo-600 text-white shadow-indigo-500/50'
+              }`}
+            >
+              {theme === 'light' ? (
+                <svg className="w-3 h-3 group-hover:rotate-45 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
                 </svg>
-                <span className="hidden sm:inline text-xs font-mono font-medium">Light</span>
-              </>
-            ) : (
-              <>
-                <svg className="w-4 h-4 text-indigo-400 group-hover:-rotate-12 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+              ) : (
+                <svg className="w-3 h-3 group-hover:-rotate-12 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
                 </svg>
-                <span className="hidden sm:inline text-xs font-mono font-medium">Dark</span>
-              </>
-            )}
+              )}
+            </div>
           </button>
 
           {/* System Online Status Badge */}
