@@ -11,11 +11,17 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 });
 
-// Helper component to auto-fit map bounds dynamically on route geometry changes
+// Helper component to auto-fit map bounds dynamically & handle window resize invalidation
 const MapBoundsFitter = ({ geometry, stops }) => {
   const map = useMap();
 
   useEffect(() => {
+    const handleResize = () => {
+      map.invalidateSize();
+    };
+
+    window.addEventListener('resize', handleResize);
+
     if (geometry && geometry.length > 0) {
       const bounds = L.latLngBounds(geometry);
       map.fitBounds(bounds, { padding: [50, 50] });
@@ -28,6 +34,8 @@ const MapBoundsFitter = ({ geometry, stops }) => {
         map.fitBounds(bounds, { padding: [50, 50] });
       }
     }
+
+    return () => window.removeEventListener('resize', handleResize);
   }, [geometry, stops, map]);
 
   return null;
@@ -41,14 +49,18 @@ const MapPlaceholder = ({ geometry = [], stops = [] }) => {
   const defaultZoom = hasData ? 6 : 4;
 
   return (
-    <div className="glass-panel rounded-3xl overflow-hidden shadow-2xl flex flex-col h-[500px] border border-white/10">
+    <div
+      role="region"
+      aria-label="Interactive Commercial Highway Route Map"
+      className="glass-panel rounded-3xl overflow-hidden shadow-2xl flex flex-col h-[350px] sm:h-[450px] md:h-[500px] border border-white/10"
+    >
       {/* Header bar */}
-      <div className="bg-slate-900/90 px-5 py-3 border-b border-white/10 flex items-center justify-between z-10 backdrop-blur-md">
+      <div className="bg-slate-900/90 px-4 sm:px-5 py-3 border-b border-white/10 flex items-center justify-between z-10 backdrop-blur-md">
         <div className="flex items-center space-x-2">
           <div className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse"></div>
-          <span className="font-bold text-slate-100 text-sm">Real-World Turn-by-Turn Highway Routing</span>
+          <span className="font-bold text-slate-100 text-xs sm:text-sm">Real-World Turn-by-Turn Highway Routing</span>
         </div>
-        <span className={`text-xs font-mono px-3 py-1 rounded-full border ${hasData ? 'bg-indigo-950 text-indigo-300 border-indigo-800' : 'bg-slate-800 text-slate-500 border-slate-700'}`}>
+        <span className={`text-[10px] sm:text-xs font-mono px-2.5 sm:px-3 py-1 rounded-full border ${hasData ? 'bg-indigo-950 text-indigo-300 border-indigo-800' : 'bg-slate-800 text-slate-500 border-slate-700'}`}>
           {hasData ? `${geometry.length} Geometry Coordinates` : 'Awaiting Parameters'}
         </span>
       </div>
@@ -67,7 +79,7 @@ const MapPlaceholder = ({ geometry = [], stops = [] }) => {
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
 
-          {hasData && <MapBoundsFitter geometry={geometry} stops={stops} />}
+          <MapBoundsFitter geometry={geometry} stops={stops} />
 
           {/* Real Highway Road Polyline */}
           {hasData && geometry.length > 0 && (

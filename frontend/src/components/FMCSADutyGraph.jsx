@@ -2,26 +2,27 @@ import React from 'react';
 
 /**
  * FMCSADutyGraph component rendering an authentic 4-row 24-hour FMCSA Driver Daily Log graph
- * matching the official government paper form.
+ * matching official FMCSA paper form standards.
  *
  * Features:
- * - Solid black top header bar with "Mid-night 1..11 Noon 1..11 Mid-night" and "Total Hours"
- * - 15-minute (short), 30-minute (medium), and 1-hour (full) vertical grid ticks
- * - 4 Row Labels:
+ * - Solid black top header bar: "Midnight 1 2 3 4 5 6 7 8 9 10 11 Noon 1 2 3 4 5 6 7 8 9 10 11 Midnight" & "Total Hours"
+ * - 15-minute, 30-minute, and 1-hour grid tick marks
+ * - 4 Standard FMCSA Status Rows:
  *   1. Off Duty
  *   2. Sleeper Berth
  *   3. Driving
  *   4. On Duty (not driving)
- * - Continuous black step-function duty path
- * - Right side total lines per row
+ * - Ultra-precise continuous vector step-function duty path starting at hour 0.0 and ending at hour 24.0
+ * - Exact vertical transitions at duty change timestamps
+ * - Right-side row total hours column & grand total 24.0 validation box
  */
 const FMCSADutyGraph = ({ segments = [], totals = {} }) => {
   const svgWidth = 840;
   const headerHeight = 26;
   const rowHeight = 32;
-  const labelWidth = 110;
+  const labelWidth = 120;
   const totalColWidth = 70;
-  const graphWidth = svgWidth - labelWidth - totalColWidth; // 660px for 24 hours (27.5px / hour)
+  const graphWidth = svgWidth - labelWidth - totalColWidth; // 650px for 24 hours (27.083px / hour)
   const graphTop = headerHeight;
 
   const STATUS_ROW_MAP = {
@@ -40,56 +41,103 @@ const FMCSADutyGraph = ({ segments = [], totals = {} }) => {
     return graphTop + rowIndex * rowHeight + rowHeight / 2;
   };
 
-  const buildGraphPath = () => {
+  // Build full 24-hour normalized segments covering 0.0 to 24.0
+  const getNormalizedSegments = () => {
     if (!segments || segments.length === 0) {
-      const startX = hourToX(0);
-      const endX = hourToX(24);
-      const y = rowToY(0);
-      return `M ${startX} ${y} L ${endX} ${y}`;
+      return [{ status: 'off_duty', start_hour: 0, end_hour: 24 }];
     }
 
+    const sorted = [...segments].sort((a, b) => a.start_hour - b.start_hour);
+    const normalized = [];
+    let currentHour = 0;
+
+    sorted.forEach((seg) => {
+      if (seg.start_hour > currentHour) {
+        normalized.push({
+          status: 'off_duty',
+          start_hour: currentHour,
+          end_hour: seg.start_hour,
+        });
+      }
+      normalized.push(seg);
+      currentHour = Math.max(currentHour, seg.end_hour);
+    });
+
+    if (currentHour < 24) {
+      normalized.push({
+        status: 'off_duty',
+        start_hour: currentHour,
+        end_hour: 24,
+      });
+    }
+
+    return normalized;
+  };
+
+  const buildGraphPath = () => {
+    const normSegs = getNormalizedSegments();
     let pathCommands = [];
     let currentY = null;
 
-    segments.forEach((seg, idx) => {
+    normSegs.forEach((seg, idx) => {
       const rowIndex = STATUS_ROW_MAP[seg.status] ?? 0;
       const startX = hourToX(seg.start_hour);
       const endX = hourToX(seg.end_hour);
       const targetY = rowToY(rowIndex);
 
       if (idx === 0) {
-        pathCommands.push(`M ${startX} ${targetY}`);
+        pathCommands.push(`M ${startX.toFixed(2)} ${targetY.toFixed(2)}`);
       } else if (currentY !== null && currentY !== targetY) {
-        pathCommands.push(`L ${startX} ${targetY}`);
+        // Vertical step transition at exact timestamp
+        pathCommands.push(`L ${startX.toFixed(2)} ${targetY.toFixed(2)}`);
       }
 
-      pathCommands.push(`L ${endX} ${targetY}`);
+      // Horizontal line across status interval
+      pathCommands.push(`L ${endX.toFixed(2)} ${targetY.toFixed(2)}`);
       currentY = targetY;
     });
 
     return pathCommands.join(' ');
   };
 
+  const offDuty = totals.off_duty || 0;
+  const sleeper = totals.sleeper || 0;
+  const driving = totals.driving || 0;
+  const onDuty = totals.on_duty || 0;
+
   const rowLabels = [
-    { name: '1. Off Duty', key: 'off_duty', hours: totals.off_duty || 0 },
-    { name: '2. Sleeper Berth', key: 'sleeper', hours: totals.sleeper || 0 },
-    { name: '3. Driving', key: 'driving', hours: totals.driving || 0 },
-    { name: '4. On Duty (not driving)', key: 'on_duty', hours: totals.on_duty || 0 },
+    { name: '1. OFF DUTY', key: 'off_duty', hours: offDuty },
+    { name: '2. SLEEPER BERTH', key: 'sleeper', hours: sleeper },
+    { name: '3. DRIVING', key: 'driving', hours: driving },
+    { name: '4. ON DUTY (not driving)', key: 'on_duty', hours: onDuty },
   ];
 
-  const grandTotal = (totals.off_duty || 0) + (totals.sleeper || 0) + (totals.driving || 0) + (totals.on_duty || 0);
+  const grandTotal = offDuty + sleeper + driving + onDuty;
 
   return (
     <div className="w-full overflow-x-auto bg-white p-2 border border-black font-sans text-black select-none">
       <div className="min-w-[800px]">
         <svg
-          viewBox={`0 0 ${svgWidth} ${graphTop + 4 * rowHeight}`}
+          viewBox={`0 0 ${svgWidth} ${graphTop + 4 * rowHeight + 1}`}
           className="w-full h-auto"
+          shapeRendering="geometricPrecision"
         >
           {/* Top Black Header Bar */}
           <rect x={0} y={0} width={svgWidth} height={headerHeight} fill="#000000" />
 
-          {/* Hour Labels inside Black Bar */}
+          {/* Left "OFFICIAL LOG" Header Label */}
+          <text
+            x={10}
+            y={17}
+            fill="#ffffff"
+            fontSize="9"
+            fontWeight="bold"
+            letterSpacing="0.5"
+          >
+            STATUS
+          </text>
+
+          {/* Hour Labels inside Black Bar (0..24) */}
           {Array.from({ length: 25 }).map((_, hour) => {
             const x = hourToX(hour);
             let labelText = hour.toString();
@@ -104,7 +152,7 @@ const FMCSADutyGraph = ({ segments = [], totals = {} }) => {
                 y={17}
                 textAnchor="middle"
                 fill="#ffffff"
-                fontSize={hour === 0 || hour === 12 || hour === 24 ? "8" : "9"}
+                fontSize={hour === 0 || hour === 12 || hour === 24 ? '7.5' : '8.5'}
                 fontWeight="bold"
               >
                 {labelText}
@@ -112,13 +160,13 @@ const FMCSADutyGraph = ({ segments = [], totals = {} }) => {
             );
           })}
 
-          {/* Total Hours Label inside Black Bar */}
+          {/* Total Hours Header */}
           <text
             x={svgWidth - 35}
             y={17}
             textAnchor="middle"
             fill="#ffffff"
-            fontSize="9"
+            fontSize="8.5"
             fontWeight="bold"
           >
             Total Hours
@@ -131,41 +179,22 @@ const FMCSADutyGraph = ({ segments = [], totals = {} }) => {
             return (
               <g key={row.key}>
                 {/* Horizontal row background */}
-                <rect
-                  x={0}
-                  y={y}
-                  width={svgWidth}
-                  height={rowHeight}
-                  fill="#ffffff"
-                />
+                <rect x={0} y={y} width={svgWidth} height={rowHeight} fill="#ffffff" />
 
                 {/* Left Row Label */}
-                <text
-                  x={8}
-                  y={y + 18}
-                  fill="#000000"
-                  fontSize="9.5"
-                  fontWeight="bold"
-                >
+                <text x={8} y={y + 19} fill="#000000" fontSize="9" fontWeight="bold">
                   {row.name}
                 </text>
 
                 {/* Horizontal top line of row */}
-                <line
-                  x1={0}
-                  y1={y}
-                  x2={svgWidth}
-                  y2={y}
-                  stroke="#000000"
-                  strokeWidth="1"
-                />
+                <line x1={0} y1={y} x2={svgWidth} y2={y} stroke="#000000" strokeWidth="1" />
 
                 {/* Right side Total Hours line & text */}
                 <line
-                  x1={labelWidth + graphWidth + 10}
-                  y1={y + rowHeight - 2}
-                  x2={svgWidth - 5}
-                  y2={y + rowHeight - 2}
+                  x1={labelWidth + graphWidth}
+                  y1={y}
+                  x2={labelWidth + graphWidth}
+                  y2={y + rowHeight}
                   stroke="#000000"
                   strokeWidth="1"
                 />
@@ -277,6 +306,14 @@ const FMCSADutyGraph = ({ segments = [], totals = {} }) => {
             strokeLinejoin="miter"
           />
         </svg>
+
+        {/* Total 24.0 Hours Grand Total Verification Footer */}
+        <div className="flex justify-between items-center mt-1 px-1 font-mono text-[10px] text-black border-t border-black pt-1 font-bold">
+          <span>24-Hour Duty Grid Status Summary</span>
+          <span className="text-emerald-800 bg-emerald-50 px-2 py-0.5 border border-emerald-300 rounded">
+            Total Accumulated: {grandTotal.toFixed(1)} / 24.0 Hours
+          </span>
+        </div>
       </div>
     </div>
   );

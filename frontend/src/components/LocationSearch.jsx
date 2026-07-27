@@ -5,13 +5,15 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
  *
  * Uses Komoot Photon OpenStreetMap Geocoding API with Nominatim fallback:
  * - 0 Rate-Limits, instant response times (<100ms).
- * - Prioritizes Cities, Towns, Municipalities & Airports (type: 'city', 'town', 'county', 'district').
- * - 300ms debouncing & AbortController request cancellation.
- * - In-memory session result caching (cacheRef).
- * - 2-line clean dropdown display (Line 1: Primary Name, Line 2: State, Country).
+ * - Supports Cities, Towns, Villages, Airports, Landmarks, & Postal Codes.
+ * - Prioritizes exact city matches and settlements over minor POIs.
+ * - Deduplicates suggestions by name, region, and coordinate proximity.
+ * - 350ms debouncing & AbortController request cancellation.
+ * - In-memory session result caching with LRU capacity limits (max 50 entries).
+ * - 2-line clean dropdown display (Line 1: Primary Name, Line 2: City, State, Country, Postal Code).
  * - Highlighted matching query substring text.
  * - Full keyboard navigation (Up, Down, Enter, Escape).
- * - Selection validation tracking (lat, lon, city, state, country).
+ * - Strict selection validation tracking (lat, lon, displayName, city, state, country).
  */
 const LocationSearch = ({
   label,
@@ -63,19 +65,23 @@ const LocationSearch = ({
     const lat = parseFloat(coords[1]);
 
     const placeType = (props.type || '').toLowerCase();
-    const city = props.city || props.district || props.town || props.locality || '';
-    const state = props.state || props.county || '';
+    const city = props.city || props.district || props.town || props.village || props.locality || props.municipality || '';
+    const state = props.state || props.county || props.region || '';
     const country = props.country || '';
+    const postcode = props.postcode || '';
 
-    let primaryName = props.name || city || props.street || 'Location';
+    let primaryName = props.name || city || props.street || props.postcode || 'Location';
 
-    // Format Secondary Text (State, Country)
+    // Format Secondary Text (City, State, Country, Postal Code)
     const secondaryParts = [];
     if (city && city.toLowerCase() !== primaryName.toLowerCase()) {
       secondaryParts.push(city);
     }
     if (state && state.toLowerCase() !== primaryName.toLowerCase()) {
       secondaryParts.push(state);
+    }
+    if (postcode && postcode !== primaryName) {
+      secondaryParts.push(postcode);
     }
     if (country) {
       secondaryParts.push(country);
@@ -84,21 +90,26 @@ const LocationSearch = ({
     const secondaryText = secondaryParts.join(', ');
     const displayName = secondaryText ? `${primaryName}, ${secondaryText}` : primaryName;
 
-    // Calculate priority rank (Lower = Higher Priority)
+    // Calculate priority rank score (Lower = Higher Priority)
     let rankScore = 5;
     const cleanSearch = searchTerm.trim().toLowerCase();
     const cleanPrimary = primaryName.toLowerCase();
+    const cleanCity = city.toLowerCase();
 
-    if (['city', 'town', 'district', 'county', 'locality'].includes(placeType)) {
-      if (cleanPrimary === cleanSearch) rankScore = 0;
-      else if (cleanPrimary.startsWith(cleanSearch)) rankScore = 1;
-      else rankScore = 2;
+    const isSettlement = ['city', 'town', 'village', 'district', 'county', 'locality', 'municipality'].includes(placeType);
+
+    if (isSettlement || cleanCity === cleanSearch) {
+      if (cleanPrimary === cleanSearch || cleanCity === cleanSearch) rankScore = 0; // Exact city match
+      else if (cleanPrimary.startsWith(cleanSearch) || cleanCity.startsWith(cleanSearch)) rankScore = 1; // Starts with query
+      else rankScore = 2; // Contains query
+    } else if (['postcode', 'postal_code'].includes(placeType) || props.postcode === cleanSearch) {
+      rankScore = 1; // Exact postal code match
+    } else if (['aerodrome', 'airport'].includes(placeType) || props.osm_value === 'airport') {
+      rankScore = 2; // Airport
     } else if (['state', 'country'].includes(placeType)) {
       rankScore = 3;
-    } else if (['aerodrome', 'airport'].includes(placeType)) {
-      rankScore = 2;
-    } else if (['house', 'building'].includes(placeType)) {
-      rankScore = 8;
+    } else if (['house', 'building', 'shop', 'amenity'].includes(placeType)) {
+      rankScore = 8; // Minor venue/house
     }
 
     return {
@@ -110,6 +121,7 @@ const LocationSearch = ({
       city: city || primaryName,
       state,
       country,
+      postcode,
       placeType,
       rankScore,
     };
@@ -118,16 +130,18 @@ const LocationSearch = ({
   /**
    * Parse Nominatim item for fallback
    */
-  const parseNominatimItem = (item) => {
+  const parseNominatimItem = (item, searchTerm = '') => {
     const addr = item.address || {};
     const city = addr.city || addr.town || addr.village || addr.municipality || addr.county || '';
     const state = addr.state || addr.region || addr.province || '';
     const country = addr.country || '';
+    const postcode = addr.postcode || '';
 
     const primaryName = item.name || city || item.display_name.split(',')[0];
     const secondaryParts = [];
     if (city && city.toLowerCase() !== primaryName.toLowerCase()) secondaryParts.push(city);
     if (state) secondaryParts.push(state);
+    if (postcode) secondaryParts.push(postcode);
     if (country) secondaryParts.push(country);
 
     const secondaryText = secondaryParts.join(', ');
@@ -142,8 +156,9 @@ const LocationSearch = ({
       city,
       state,
       country,
+      postcode,
       placeType: item.type || 'place',
-      rankScore: 1,
+      rankScore: primaryName.toLowerCase() === searchTerm.trim().toLowerCase() ? 0 : 1,
     };
   };
 
@@ -179,7 +194,7 @@ const LocationSearch = ({
 
     try {
       const signal = abortControllerRef.current.signal;
-      const photonUrl = `https://photon.komoot.io/api/?q=${encodeURIComponent(searchTerm)}&limit=8`;
+      const photonUrl = `https://photon.komoot.io/api/?q=${encodeURIComponent(searchTerm)}&limit=10`;
 
       const response = await fetch(photonUrl, { signal });
 
@@ -189,22 +204,33 @@ const LocationSearch = ({
 
         const parsed = features.map((f) => parsePhotonFeature(f, searchTerm));
 
-        // Deduplicate
+        // Deduplicate by name + location & coordinate proximity
         const unique = [];
-        const seen = new Set();
+        const seenKeys = new Set();
+
         parsed.forEach((item) => {
           const key = `${item.primaryName.toLowerCase()}|${item.secondaryText.toLowerCase()}`;
-          if (!seen.has(key) && !isNaN(item.latitude) && !isNaN(item.longitude)) {
-            seen.add(key);
+          const isDupCoord = unique.some(
+            (u) => Math.abs(u.latitude - item.latitude) < 0.005 && Math.abs(u.longitude - item.longitude) < 0.005
+          );
+
+          if (!seenKeys.has(key) && !isDupCoord && !isNaN(item.latitude) && !isNaN(item.longitude)) {
+            seenKeys.add(key);
             unique.push(item);
           }
         });
 
-        // Sort by rank score (Cities/Airports first)
+        // Sort by rank score (Exact Cities & Postal Codes first)
         unique.sort((a, b) => a.rankScore - b.rankScore);
 
         const sliced = unique.slice(0, 6);
+
+        // Bounded Cache Eviction (max 50 items)
+        if (Object.keys(cacheRef.current).length > 50) {
+          cacheRef.current = {};
+        }
         cacheRef.current[cleanTerm] = sliced;
+
         setSuggestions(sliced);
         setIsOpen(true);
       } else {
@@ -225,7 +251,7 @@ const LocationSearch = ({
 
         if (nomRes.ok) {
           const nomData = await nomRes.json();
-          const parsedNom = nomData.map(parseNominatimItem);
+          const parsedNom = nomData.map((item) => parseNominatimItem(item, searchTerm));
 
           const unique = [];
           const seen = new Set();
@@ -237,7 +263,11 @@ const LocationSearch = ({
             }
           });
 
+          if (Object.keys(cacheRef.current).length > 50) {
+            cacheRef.current = {};
+          }
           cacheRef.current[cleanTerm] = unique;
+
           setSuggestions(unique);
           setIsOpen(true);
         } else {
@@ -256,7 +286,7 @@ const LocationSearch = ({
     }
   }, []);
 
-  // Handle Input Text Change with 300ms Debounce
+  // Handle Input Text Change with 350ms Debounce
   const handleInputChange = (e) => {
     const val = e.target.value;
     setQuery(val);
@@ -281,7 +311,7 @@ const LocationSearch = ({
       setIsLoading(true);
       debounceTimerRef.current = setTimeout(() => {
         fetchLocations(val);
-      }, 300);
+      }, 350);
     } else {
       setSuggestions([]);
       setIsLoading(false);

@@ -1,3 +1,4 @@
+import math
 from django.test import TestCase
 from services.stop_planner import StopPlanner
 
@@ -67,3 +68,53 @@ class StopPlannerTest(TestCase):
 
         self.assertEqual(pickup_entry["duration_hours"], 1.0)
         self.assertEqual(dropoff_entry["duration_hours"], 1.0)
+
+    def test_fuel_stop_markers_lie_on_displayed_polyline(self):
+        """
+        Validation Test: Ensures every generated fuel stop marker lies directly
+        on the displayed route polyline (within a threshold of < 10 meters).
+        """
+        # Multi-state route geometry polyline: Kakinada -> Bengaluru -> Delhi
+        geometry = [
+            [16.9891, 82.2475],  # Kakinada
+            [13.0827, 80.2707],  # Chennai
+            [12.9716, 77.5946],  # Bengaluru
+            [17.6599, 75.9064],  # Solapur
+            [22.7196, 75.8577],  # Indore
+            [27.1767, 78.0081],  # Agra
+            [28.6139, 77.2090],  # Delhi
+        ]
+
+        fuel_stops = StopPlanner.generate_fuel_stops_from_geometry(geometry, 1000.0)
+        self.assertGreater(len(fuel_stops), 0)
+
+        for fuel in fuel_stops:
+            flat = fuel["latitude"]
+            flon = fuel["longitude"]
+
+            # Calculate minimum distance from fuel marker to any segment of geometry polyline
+            min_distance_meters = float("inf")
+
+            for i in range(len(geometry) - 1):
+                p1 = geometry[i]
+                p2 = geometry[i + 1]
+
+                # Project point onto segment p1-p2
+                dlat = p2[0] - p1[0]
+                dlon = p2[1] - p1[1]
+                length_sq = dlat * dlat + dlon * dlon
+
+                if length_sq > 0:
+                    t = max(0.0, min(1.0, ((flat - p1[0]) * dlat + (flon - p1[1]) * dlon) / length_sq))
+                else:
+                    t = 0.0
+
+                proj_lat = p1[0] + t * dlat
+                proj_lon = p1[1] + t * dlon
+
+                dist_miles = StopPlanner.haversine_miles(flat, flon, proj_lat, proj_lon)
+                dist_meters = dist_miles * 1609.34
+                min_distance_meters = min(min_distance_meters, dist_meters)
+
+            # Assert fuel stop marker is within 10 meters of the polyline
+            self.assertLess(min_distance_meters, 10.0, f"Fuel stop marker {fuel['location_name']} is too far ({min_distance_meters:.2f}m) from route polyline!")

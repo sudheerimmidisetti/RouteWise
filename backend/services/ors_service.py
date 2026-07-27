@@ -40,6 +40,7 @@ class OpenRouteService:
     """
     Routing service wrapper integrating OpenStreetMap OSRM and OpenRouteService APIs
     to fetch 100% real-world turn-by-turn road geometry, highway distance, and duration.
+    Uses requests.Session() connection pooling for high-throughput performance.
     """
 
     def __init__(self, api_key: str = None):
@@ -47,6 +48,8 @@ class OpenRouteService:
         self.primary_osrm_url = "https://routing.openstreetmap.de/routed-car/route/v1/driving"
         self.secondary_osrm_url = "https://router.project-osrm.org/route/v1/driving"
         self.headers = {"User-Agent": "RouteWise-RoutingApp/1.0"}
+        self.session = requests.Session()
+        self.session.headers.update(self.headers)
 
     def geocode_location(self, location_name: str) -> tuple:
         """
@@ -63,7 +66,7 @@ class OpenRouteService:
         try:
             url = "https://nominatim.openstreetmap.org/search"
             params = {"q": location_name, "format": "json", "limit": 1}
-            res = requests.get(url, headers=self.headers, params=params, timeout=5)
+            res = self.session.get(url, params=params, timeout=5)
             if res.status_code == 200 and res.json():
                 item = res.json()[0]
                 return (float(item["lon"]), float(item["lat"]))
@@ -87,7 +90,7 @@ class OpenRouteService:
         for base_url in [self.primary_osrm_url, self.secondary_osrm_url]:
             try:
                 url = f"{base_url}/{coords_str}?overview=full&geometries=geojson"
-                res = requests.get(url, headers=self.headers, timeout=6)
+                res = self.session.get(url, timeout=6)
                 if res.status_code == 200:
                     data = res.json()
                     routes = data.get("routes", [])
