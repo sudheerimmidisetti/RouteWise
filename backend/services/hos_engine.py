@@ -32,7 +32,7 @@ class HOSEngine:
         dropoff_duration_hours: float = 1.0,
     ) -> list:
         """
-        Calculates a chronological timeline of events for a trip.
+        Calculates a chronological timeline of events for a trip starting at 08:00 AM shift start.
         Returns a list of dicts with keys:
         - start_time: ISO 8601 string
         - end_time: ISO 8601 string
@@ -42,7 +42,8 @@ class HOSEngine:
         - remarks: str
         """
         if start_time is None:
-            start_time = datetime.now(timezone.utc).replace(microsecond=0)
+            now = datetime.now(timezone.utc)
+            start_time = datetime(now.year, now.month, now.day, 8, 0, 0, tzinfo=timezone.utc)
 
         timeline = []
         current_time = start_time
@@ -75,7 +76,6 @@ class HOSEngine:
             driving_since_break = 0.0
 
         # Step 1: Start at Current Location -> Drive to Pickup
-        # Distribute driving hours into Pickup leg vs Dropoff leg
         pickup_leg_driving = min(total_driving_hours * 0.25, 3.0)
         dropoff_leg_driving = total_driving_hours - pickup_leg_driving
 
@@ -84,7 +84,6 @@ class HOSEngine:
             ("Dropoff Leg", dropoff_leg_driving, pickup_location, dropoff_location),
         ]
 
-        # Insert initial Pickup on-duty activity at Pickup arrival
         has_done_pickup = False
 
         for leg_name, leg_driving_needed, origin_loc, dest_loc in remaining_driving_queue:
