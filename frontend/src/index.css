@@ -99,3 +99,23 @@ body {
 .leaflet-container .leaflet-control-attribution a:hover {
   color: #0284c7 !important;
 }
+
+/* Print-Optimized CSS for PDF & Paper Printing */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  header, nav, button, .no-print {
+    display: none !important;
+  }
+
+  .print-only-log {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+}
