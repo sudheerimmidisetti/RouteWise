@@ -4,7 +4,7 @@
  * Runs automatically when the backend server is unreachable (e.g. Vercel deployment without backend URL).
  * Geocodes waypoints via Nominatim, fetches turn-by-turn road geometry from OSM Germany OSRM API leg-by-leg,
  * calculates 1000-mile fuel stops along actual road polyline geometry, 11h/14h/8h/70h FMCSA HOS rules,
- * and generates 24-hour daily log sheets.
+ * and generates 24-hour daily log sheets with midnight boundary splitting.
  */
 
 export const fallbackPlanTrip = async (tripData) => {
@@ -44,7 +44,7 @@ export const fallbackPlanTrip = async (tripData) => {
   const stops = plannerResult.stops;
   const timeline = plannerResult.timeline;
 
-  // 4. Generate Multi-day FMCSA Daily Logs
+  // 4. Generate Multi-day FMCSA Daily Logs with Midnight Splitting
   const dailyLogs = generateDailyLogs(timeline, initialCycleUsed);
 
   return {
@@ -367,78 +367,161 @@ function generateStopsAndTimeline(distMiles, durHours, initialCycle, geometry, c
 function generateDailyLogs(timeline, initialCycle) {
   if (!timeline || timeline.length === 0) return [];
 
-  // Group timeline segments by calendar day YYYY-MM-DD
-  const daysMap = {};
-  timeline.forEach((item) => {
-    const dayKey = item.start_time.split('T')[0];
-    if (!daysMap[dayKey]) daysMap[dayKey] = [];
-    daysMap[dayKey].push(item);
-  });
+  const statusMap = {
+    Driving: 'driving',
+    Pickup: 'on_duty',
+    Dropoff: 'on_duty',
+    Fuel: 'on_duty',
+    'On Duty (Not Driving)': 'on_duty',
+    'On Duty': 'on_duty',
+    'Off Duty': 'off_duty',
+    Break: 'off_duty',
+    Rest: 'sleeper',
+    'Sleeper Berth': 'sleeper',
+  };
 
-  const dayKeys = Object.keys(daysMap).sort();
-  let remainingCycle = Math.max(0, 70.0 - initialCycle);
+  const tripStart = new Date(timeline[0].start_time);
+  const daysBuckets = {};
 
-  return dayKeys.map((dayKey, idx) => {
-    const dayItems = daysMap[dayKey];
-    let drivingHours = 0;
-    let onDutyHours = 0;
-    let offDutyHours = 0;
-    let sleeperHours = 0;
+  const addSubEvent = (curStart, curEnd, status, remarks, location) => {
+    const mappedStatus = statusMap[status] || 'off_duty';
 
-    const segments = [];
-    const remarksDetail = [];
+    const startDay = new Date(curStart.getFullYear(), curStart.getMonth(), curStart.getDate());
+    const originDay = new Date(tripStart.getFullYear(), tripStart.getMonth(), tripStart.getDate());
+    const diffDays = Math.round((startDay - originDay) / (1000 * 60 * 60 * 24));
+    const dayIdx = Math.max(1, diffDays + 1);
 
-    dayItems.forEach((item) => {
-      const dur = item.duration_hours;
-      const st = item.status;
+    if (!daysBuckets[dayIdx]) {
+      const dayDate = new Date(originDay);
+      dayDate.setDate(dayDate.getDate() + (dayIdx - 1));
+      daysBuckets[dayIdx] = {
+        day_number: dayIdx,
+        date: dayDate.toISOString().split('T')[0],
+        driving_hours: 0,
+        on_duty_hours: 0,
+        off_duty_hours: 0,
+        sleeper_hours: 0,
+        miles_today: 0,
+        remarks_detail: [],
+        raw_segments: [],
+      };
+    }
 
-      if (st === 'Driving') drivingHours += dur;
-      else if (st === 'On Duty (Not Driving)' || st === 'On Duty') onDutyHours += dur;
-      else if (st === 'Sleeper Berth') sleeperHours += dur;
-      else offDutyHours += dur;
+    const dayData = daysBuckets[dayIdx];
+    const subDuration = Math.round(((curEnd - curStart) / (1000 * 60 * 60)) * 100) / 100;
 
-      const sHour = new Date(item.start_time).getHours() + new Date(item.start_time).getMinutes() / 60.0;
-      const eHour = sHour + dur;
+    if (subDuration <= 0) return;
 
-      let statusCode = 'off_duty';
-      if (st === 'Driving') statusCode = 'driving';
-      else if (st === 'On Duty (Not Driving)' || st === 'On Duty') statusCode = 'on_duty';
-      else if (st === 'Sleeper Berth') statusCode = 'sleeper';
+    const timeStr = curStart.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-      segments.push({ status: statusCode, start_hour: sHour, end_hour: eHour });
+    if (mappedStatus === 'driving') {
+      dayData.driving_hours += subDuration;
+      dayData.miles_today += Math.round(subDuration * 55);
+    } else if (mappedStatus === 'on_duty') {
+      dayData.on_duty_hours += subDuration;
+    } else if (mappedStatus === 'off_duty') {
+      dayData.off_duty_hours += subDuration;
+    } else if (mappedStatus === 'sleeper') {
+      dayData.sleeper_hours += subDuration;
+    }
 
-      const timeStr = new Date(item.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      remarksDetail.push({
-        time: timeStr,
-        location: item.location_name,
-        status: st,
-        reason: item.remarks,
-      });
+    dayData.raw_segments.push({
+      status: mappedStatus,
+      duration: subDuration,
+      location,
+      remarks,
     });
 
-    const totalCalculated = drivingHours + onDutyHours + sleeperHours;
-    offDutyHours = Math.max(0, Math.round((24.0 - totalCalculated) * 10) / 10);
-    remainingCycle = Math.max(0, Math.round((remainingCycle - drivingHours - onDutyHours) * 10) / 10);
+    dayData.remarks_detail.push({
+      time: timeStr,
+      location,
+      status,
+      reason: remarks,
+    });
+  };
+
+  // Process timeline entries & split at midnight boundaries
+  timeline.forEach((item) => {
+    let curStart = new Date(item.start_time);
+    const endDt = new Date(item.end_time);
+    const status = item.status;
+    const remarks = item.remarks;
+    const location = item.location_name;
+
+    while (curStart < endDt) {
+      const nextMidnight = new Date(curStart.getFullYear(), curStart.getMonth(), curStart.getDate() + 1);
+      const curEnd = endDt < nextMidnight ? endDt : nextMidnight;
+      addSubEvent(curStart, curEnd, status, remarks, location);
+      curStart = curEnd;
+    }
+  });
+
+  const sortedDays = Object.keys(daysBuckets).map(Number).sort((a, b) => a - b);
+  let remainingCycle = Math.max(0, 70.0 - parseFloat(initialCycle || 0));
+
+  return sortedDays.map((dayNum) => {
+    const day = daysBuckets[dayNum];
+    const driving = Math.round(day.driving_hours * 10) / 10;
+    const onDuty = Math.round(day.on_duty_hours * 10) / 10;
+    let offDuty = Math.round(day.off_duty_hours * 10) / 10;
+    const sleeper = Math.round(day.sleeper_hours * 10) / 10;
+
+    const sumHours = driving + onDuty + offDuty + sleeper;
+    if (sumHours < 24.0) {
+      const unallocated = Math.round((24.0 - sumHours) * 10) / 10;
+      offDuty = Math.round((offDuty + unallocated) * 10) / 10;
+    }
+
+    const onDutyToday = driving + onDuty;
+    remainingCycle = Math.max(0, Math.round((remainingCycle - onDutyToday) * 10) / 10);
+
+    // Build 24-hour SVG graph segment coordinates sequentially from 0.0 to 24.0
+    const segments = [];
+    let currHour = 0.0;
+
+    day.raw_segments.forEach((raw) => {
+      if (currHour >= 24.0) return;
+      const dur = Math.min(raw.duration, 24.0 - currHour);
+      if (dur > 0) {
+        segments.push({
+          status: raw.status,
+          start_hour: Math.round(currHour * 100) / 100,
+          end_hour: Math.round((currHour + dur) * 100) / 100,
+          duration_hours: Math.round(dur * 100) / 100,
+        });
+        currHour += dur;
+      }
+    });
+
+    if (currHour < 24.0) {
+      segments.push({
+        status: 'off_duty',
+        start_hour: Math.round(currHour * 100) / 100,
+        end_hour: 24.0,
+        duration_hours: Math.round((24.0 - currHour) * 100) / 100,
+      });
+    }
 
     return {
-      day_number: idx + 1,
-      date: dayKey,
-      miles_today: Math.round(drivingHours * 55),
-      driving_hours: Math.round(drivingHours * 10) / 10,
-      on_duty_hours: Math.round(onDutyHours * 10) / 10,
-      off_duty_hours: offDutyHours,
-      sleeper_hours: Math.round(sleeperHours * 10) / 10,
-      total_hours: 24.0,
-      remaining_cycle_hours: remainingCycle,
+      day_number: dayNum,
+      date: day.date,
+      miles_today: Math.round(day.miles_today),
       carrier_name: 'RouteWise Logistics',
       main_office_address: '100 Transport Way, Suite 400, Chicago, IL 60601',
       driver_name: 'Demo Driver',
       vehicle_number: 'TRK-001 / Trailer #TR-88',
-      shipping_number: 'AUTO-0001',
+      shipping_number: sortedDays.length > 1 ? `AUTO-0001-D${dayNum}` : 'AUTO-0001',
+      co_driver: 'N/A',
+      driving_hours: driving,
+      on_duty_hours: onDuty,
+      off_duty_hours: offDuty,
+      sleeper_hours: sleeper,
+      total_hours: 24.0,
+      remaining_cycle_hours: remainingCycle,
       from_location: timeline[0]?.location_name || 'ORIGIN TERMINAL',
       to_location: timeline[timeline.length - 1]?.location_name || 'DESTINATION TERMINAL',
       segments,
-      remarks_detail: remarksDetail,
+      remarks_detail: day.remarks_detail,
     };
   });
 }
