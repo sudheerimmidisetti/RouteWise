@@ -1,31 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 
 const Navbar = () => {
   const location = useLocation();
 
-  // Theme Toggle State (Dark / Light)
-  const [theme, setTheme] = useState(() => {
-    return localStorage.getItem('routewise_theme') || 'dark';
-  });
-
-  useEffect(() => {
-    if (theme === 'light') {
-      document.body.classList.add('light-theme');
-    } else {
-      document.body.classList.remove('light-theme');
-    }
-    localStorage.setItem('routewise_theme', theme);
-  }, [theme]);
-
-  const toggleTheme = () => {
-    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
-  };
-
   const isActive = (path) => location.pathname === path;
 
   return (
-    <header className="bg-slate-950/80 backdrop-blur-xl border-b border-white/10 sticky top-0 z-50 transition-colors duration-300">
+    <header className="bg-slate-950/80 backdrop-blur-xl border-b border-white/10 sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         {/* Brand Logo & Tagline */}
         <Link to="/" className="flex items-center space-x-3 group">
@@ -57,12 +39,12 @@ const Navbar = () => {
           </div>
         </Link>
 
-        {/* Navigation Links, Theme Toggle Switch & System Badge */}
-        <div className="flex items-center space-x-3 sm:space-x-4">
+        {/* Navigation Links & System Badge */}
+        <div className="flex items-center space-x-3 sm:space-x-6">
           <nav className="flex items-center space-x-1 sm:space-x-2 bg-slate-900/90 p-1 rounded-xl border border-white/5">
             <Link
               to="/"
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 ${
+              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 ${
                 isActive('/')
                   ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
                   : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
@@ -73,7 +55,7 @@ const Navbar = () => {
 
             <Link
               to="/planner"
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 flex items-center space-x-1.5 ${
+              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 flex items-center space-x-1.5 ${
                 isActive('/planner')
                   ? 'bg-gradient-to-r from-indigo-600 to-cyan-600 text-white shadow-md shadow-indigo-600/30'
                   : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
@@ -96,39 +78,7 @@ const Navbar = () => {
             </Link>
           </nav>
 
-          {/* Premium iOS-Style Glassmorphism Sliding Toggle Switch */}
-          <button
-            type="button"
-            onClick={toggleTheme}
-            title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
-            aria-label="Toggle Webpage Theme Mode"
-            className={`relative w-14 h-7 rounded-full p-1 transition-all duration-300 backdrop-blur-md border shadow-inner flex items-center cursor-pointer group ${
-              theme === 'light'
-                ? 'bg-amber-400/20 border-amber-500/40 shadow-amber-500/10'
-                : 'bg-slate-900/90 border-indigo-500/30 shadow-indigo-500/10'
-            }`}
-          >
-            <div
-              className={`w-5 h-5 rounded-full flex items-center justify-center transition-all duration-300 transform shadow-md ${
-                theme === 'light'
-                  ? 'translate-x-7 bg-amber-400 text-slate-950 shadow-amber-400/50'
-                  : 'translate-x-0 bg-indigo-600 text-white shadow-indigo-500/50'
-              }`}
-            >
-              {theme === 'light' ? (
-                <svg className="w-3 h-3 group-hover:rotate-45 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-                </svg>
-              ) : (
-                <svg className="w-3 h-3 group-hover:-rotate-12 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-                </svg>
-              )}
-            </div>
-          </button>
-
-          {/* System Online Status Badge */}
-          <div className="hidden lg:flex items-center space-x-2 text-[11px] font-mono text-emerald-400 bg-emerald-950/50 px-3 py-1.5 rounded-xl border border-emerald-800/60">
+          <div className="hidden md:flex items-center space-x-2 text-[11px] font-mono text-emerald-400 bg-emerald-950/50 px-3 py-1.5 rounded-xl border border-emerald-800/60">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
             <span>HOS Engine Online</span>
           </div>
