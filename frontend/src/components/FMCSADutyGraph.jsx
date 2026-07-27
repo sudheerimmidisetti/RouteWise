@@ -5,25 +5,25 @@ import React from 'react';
  * matching official FMCSA paper form standards.
  *
  * Features:
- * - Solid black top header bar: "Midnight 1 2 3 4 5 6 7 8 9 10 11 Noon 1 2 3 4 5 6 7 8 9 10 11 Midnight" & "Total Hours"
+ * - Top header bar: "0 1 2 3 4 5 6 7 8 9 10 11 Noon 13 14 15 16 17 18 19 20 21 22 23 24" & stacked "Total / Hours"
  * - 15-minute, 30-minute, and 1-hour grid tick marks
  * - 4 Standard FMCSA Status Rows:
- *   1. Off Duty
- *   2. Sleeper Berth
- *   3. Driving
- *   4. On Duty (not driving)
+ *   1. OFF DUTY
+ *   2. SLEEPER BERTH
+ *   3. DRIVING
+ *   4. ON DUTY
+ *      (not driving)
+ * - Compact label columns & compact 24-hour grid spacing
  * - Ultra-precise continuous vector step-function duty path starting at hour 0.0 and ending at hour 24.0
- * - Exact vertical transitions at duty change timestamps
- * - preserveAspectRatio="xMinYMin meet" for rock-solid grid & status bar alignment across full window lengths
  * - Right-side row total hours column & grand total 24.0 validation box
  */
 const FMCSADutyGraph = ({ segments = [], totals = {} }) => {
-  const svgWidth = 840;
+  const svgWidth = 740;
   const headerHeight = 26;
   const rowHeight = 32;
-  const labelWidth = 120;
-  const totalColWidth = 70;
-  const graphWidth = svgWidth - labelWidth - totalColWidth; // 650px for 24 hours (27.083px / hour)
+  const labelWidth = 95;
+  const totalColWidth = 50;
+  const graphWidth = svgWidth - labelWidth - totalColWidth; // 595px for 24 hours
   const graphTop = headerHeight;
 
   const STATUS_ROW_MAP = {
@@ -107,17 +107,17 @@ const FMCSADutyGraph = ({ segments = [], totals = {} }) => {
   const onDuty = totals.on_duty || 0;
 
   const rowLabels = [
-    { name: '1. OFF DUTY', key: 'off_duty', hours: offDuty },
-    { name: '2. SLEEPER BERTH', key: 'sleeper', hours: sleeper },
-    { name: '3. DRIVING', key: 'driving', hours: driving },
-    { name: '4. ON DUTY (not driving)', key: 'on_duty', hours: onDuty },
+    { line1: '1. OFF DUTY', line2: null, key: 'off_duty', hours: offDuty },
+    { line1: '2. SLEEPER BERTH', line2: null, key: 'sleeper', hours: sleeper },
+    { line1: '3. DRIVING', line2: null, key: 'driving', hours: driving },
+    { line1: '4. ON DUTY', line2: '(not driving)', key: 'on_duty', hours: onDuty },
   ];
 
   const grandTotal = offDuty + sleeper + driving + onDuty;
 
   return (
-    <div className="w-full overflow-x-auto bg-white p-2 border border-black font-sans text-black select-none">
-      <div className="w-full min-w-[780px]">
+    <div className="w-full bg-white p-2 border border-black font-sans text-black select-none">
+      <div className="w-full">
         <svg
           viewBox={`0 0 ${svgWidth} ${graphTop + 4 * rowHeight + 1}`}
           className="w-full h-auto block"
@@ -127,12 +127,12 @@ const FMCSADutyGraph = ({ segments = [], totals = {} }) => {
           {/* Top Black Header Bar */}
           <rect x={0} y={0} width={svgWidth} height={headerHeight} fill="#000000" />
 
-          {/* Left "OFFICIAL LOG" Header Label */}
+          {/* Left "STATUS" Header Label */}
           <text
-            x={10}
-            y={17}
+            x={8}
+            y={16}
             fill="#ffffff"
-            fontSize="9"
+            fontSize="8.5"
             fontWeight="bold"
             letterSpacing="0.5"
           >
@@ -143,18 +143,18 @@ const FMCSADutyGraph = ({ segments = [], totals = {} }) => {
           {Array.from({ length: 25 }).map((_, hour) => {
             const x = hourToX(hour);
             let labelText = hour.toString();
-            if (hour === 0) labelText = 'Mid-night';
+            if (hour === 0) labelText = '0';
             else if (hour === 12) labelText = 'Noon';
-            else if (hour === 24) labelText = 'Mid-night';
+            else if (hour === 24) labelText = '24';
 
             return (
               <text
                 key={hour}
                 x={x}
-                y={17}
+                y={16}
                 textAnchor="middle"
                 fill="#ffffff"
-                fontSize={hour === 0 || hour === 12 || hour === 24 ? '7.5' : '8.5'}
+                fontSize={hour === 12 ? '7.5' : '8.5'}
                 fontWeight="bold"
               >
                 {labelText}
@@ -162,16 +162,26 @@ const FMCSADutyGraph = ({ segments = [], totals = {} }) => {
             );
           })}
 
-          {/* Total Hours Header */}
+          {/* Total Hours Header (Stacked Vertically "Total / Hours") */}
           <text
-            x={svgWidth - 35}
-            y={17}
+            x={svgWidth - 25}
+            y={10}
             textAnchor="middle"
             fill="#ffffff"
-            fontSize="8.5"
+            fontSize="7.5"
             fontWeight="bold"
           >
-            Total Hours
+            Total
+          </text>
+          <text
+            x={svgWidth - 25}
+            y={20}
+            textAnchor="middle"
+            fill="#ffffff"
+            fontSize="7.5"
+            fontWeight="bold"
+          >
+            Hours
           </text>
 
           {/* 4 Status Rows Grid */}
@@ -183,10 +193,21 @@ const FMCSADutyGraph = ({ segments = [], totals = {} }) => {
                 {/* Horizontal row background */}
                 <rect x={0} y={y} width={svgWidth} height={rowHeight} fill="#ffffff" />
 
-                {/* Left Row Label */}
-                <text x={8} y={y + 19} fill="#000000" fontSize="9" fontWeight="bold">
-                  {row.name}
-                </text>
+                {/* Left Row Label (Line 1 & optional Line 2 stacked vertically) */}
+                {row.line2 ? (
+                  <>
+                    <text x={6} y={y + 13} fill="#000000" fontSize="8" fontWeight="bold">
+                      {row.line1}
+                    </text>
+                    <text x={6} y={y + 24} fill="#000000" fontSize="7.5" fontWeight="bold">
+                      {row.line2}
+                    </text>
+                  </>
+                ) : (
+                  <text x={6} y={y + 19} fill="#000000" fontSize="8.5" fontWeight="bold">
+                    {row.line1}
+                  </text>
+                )}
 
                 {/* Horizontal top line of row */}
                 <line x1={0} y1={y} x2={svgWidth} y2={y} stroke="#000000" strokeWidth="1" />
@@ -201,11 +222,11 @@ const FMCSADutyGraph = ({ segments = [], totals = {} }) => {
                   strokeWidth="1"
                 />
                 <text
-                  x={svgWidth - 35}
+                  x={svgWidth - 25}
                   y={y + 20}
                   textAnchor="middle"
                   fill="#000000"
-                  fontSize="11"
+                  fontSize="10.5"
                   fontWeight="bold"
                 >
                   {row.hours.toFixed(1)}
