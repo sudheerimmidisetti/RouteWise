@@ -11,6 +11,74 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 });
 
+/**
+ * Creates custom pin pointer Leaflet icons with exact color matching:
+ * - Current Location: #00D492 (Emerald Teal)
+ * - Pickup Location:  #00D3F3 (Cyan)
+ * - Dropoff Location: #FF637E (Coral Rose)
+ * - Fuel Stop:        #F59E0B (Amber Gold)
+ */
+const createCustomPinIcon = (stopType, sequenceOrder) => {
+  let pinColor = '#6366f1'; // Default Indigo
+  let pinLabel = sequenceOrder ? sequenceOrder.toString() : '•';
+  let badgeText = stopType;
+
+  if (stopType === 'CURRENT') {
+    pinColor = '#00D492';
+    pinLabel = '1';
+    badgeText = 'START';
+  } else if (stopType === 'PICKUP') {
+    pinColor = '#00D3F3';
+    pinLabel = '2';
+    badgeText = 'PICKUP';
+  } else if (stopType === 'DROPOFF') {
+    pinColor = '#FF637E';
+    pinLabel = sequenceOrder ? sequenceOrder.toString() : '3';
+    badgeText = 'DROPOFF';
+  } else if (stopType === 'FUEL') {
+    pinColor = '#F59E0B';
+    pinLabel = '⛽';
+    badgeText = 'FUEL';
+  }
+
+  return L.divIcon({
+    className: 'custom-pin-marker-wrapper',
+    html: `
+      <div style="position: relative; display: flex; flex-direction: column; align-items: center; cursor: pointer;">
+        <div style="
+          background: ${pinColor};
+          color: #ffffff;
+          font-weight: 800;
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+          font-size: 11px;
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 4px 14px ${pinColor}99, 0 0 0 3px #ffffff;
+          transition: transform 0.2s ease;
+        ">
+          ${pinLabel}
+        </div>
+        <div style="
+          width: 0;
+          height: 0;
+          border-left: 7px solid transparent;
+          border-right: 7px solid transparent;
+          border-top: 10px solid ${pinColor};
+          margin-top: -2px;
+          filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+        "></div>
+      </div>
+    `,
+    iconSize: [32, 40],
+    iconAnchor: [16, 40],
+    popupAnchor: [0, -40],
+  });
+};
+
 // Helper component to auto-fit map bounds dynamically & handle window resize invalidation
 const MapBoundsFitter = ({ geometry, stops }) => {
   const map = useMap();
@@ -44,8 +112,8 @@ const MapBoundsFitter = ({ geometry, stops }) => {
 const MapPlaceholder = ({ geometry = [], stops = [] }) => {
   const hasData = geometry.length > 0 || stops.length > 0;
 
-  // Default center coordinates (Geographic Center of United States)
-  const defaultCenter = hasData && geometry[0] ? geometry[0] : [39.8283, -98.5795];
+  // Default center coordinates
+  const defaultCenter = hasData && geometry[0] ? geometry[0] : [17.3850, 78.4867];
   const defaultZoom = hasData ? 6 : 4;
 
   return (
@@ -54,15 +122,28 @@ const MapPlaceholder = ({ geometry = [], stops = [] }) => {
       aria-label="Interactive Commercial Highway Route Map"
       className="glass-panel rounded-3xl overflow-hidden shadow-2xl flex flex-col h-[350px] sm:h-[450px] md:h-[500px] border border-white/10"
     >
-      {/* Header bar */}
-      <div className="bg-slate-900/90 px-4 sm:px-5 py-3 border-b border-white/10 flex items-center justify-between z-10 backdrop-blur-md">
+      {/* Header bar with color key badges */}
+      <div className="bg-slate-900/90 px-4 sm:px-5 py-3 border-b border-white/10 flex flex-wrap items-center justify-between gap-2 z-10 backdrop-blur-md">
         <div className="flex items-center space-x-2">
-          <div className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse"></div>
-          <span className="font-bold text-slate-100 text-xs sm:text-sm">Real-World Turn-by-Turn Highway Routing</span>
+          <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></div>
+          <span className="font-bold text-slate-100 text-xs sm:text-sm">Interactive Route & Location Map</span>
         </div>
-        <span className={`text-[10px] sm:text-xs font-mono px-2.5 sm:px-3 py-1 rounded-full border ${hasData ? 'bg-indigo-950 text-indigo-300 border-indigo-800' : 'bg-slate-800 text-slate-500 border-slate-700'}`}>
-          {hasData ? `${geometry.length} Geometry Coordinates` : 'Awaiting Parameters'}
-        </span>
+
+        {/* Pin Color Legend */}
+        <div className="flex items-center space-x-3 text-[10px] font-mono">
+          <div className="flex items-center space-x-1">
+            <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: '#00D492' }}></span>
+            <span className="text-slate-300">Current</span>
+          </div>
+          <div className="flex items-center space-x-1">
+            <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: '#00D3F3' }}></span>
+            <span className="text-slate-300">Pickup</span>
+          </div>
+          <div className="flex items-center space-x-1">
+            <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: '#FF637E' }}></span>
+            <span className="text-slate-300">Dropoff</span>
+          </div>
+        </div>
       </div>
 
       {/* Map Container */}
@@ -91,20 +172,73 @@ const MapPlaceholder = ({ geometry = [], stops = [] }) => {
             />
           )}
 
-          {/* Waypoint Markers */}
+          {/* Custom Colored Pin Pointer Markers with Interactive Click Popups */}
           {hasData &&
             stops.map((stop, idx) => {
               if (!stop.latitude || !stop.longitude) return null;
+              
+              const pinIcon = createCustomPinIcon(stop.stop_type, stop.sequence_order || idx + 1);
+
+              let headerBg = 'bg-slate-800 text-slate-100';
+              let badgeBg = '#6366f1';
+              let roleName = 'Waypoint';
+
+              if (stop.stop_type === 'CURRENT') {
+                badgeBg = '#00D492';
+                roleName = 'Current Location';
+              } else if (stop.stop_type === 'PICKUP') {
+                badgeBg = '#00D3F3';
+                roleName = 'Pickup Location';
+              } else if (stop.stop_type === 'DROPOFF') {
+                badgeBg = '#FF637E';
+                roleName = 'Dropoff Location';
+              } else if (stop.stop_type === 'FUEL') {
+                badgeBg = '#F59E0B';
+                roleName = 'Fuel Stop';
+              }
+
               return (
-                <Marker key={idx} position={[stop.latitude, stop.longitude]}>
+                <Marker
+                  key={idx}
+                  position={[stop.latitude, stop.longitude]}
+                  icon={pinIcon}
+                >
                   <Popup>
-                    <div className="p-1 font-sans text-xs">
-                      <span className={`inline-block px-2.5 py-0.5 rounded text-[10px] font-bold uppercase mb-1 border ${getStopTypeBadge(stop.stop_type)}`}>
-                        {stop.stop_type}
-                      </span>
-                      <div className="font-bold text-slate-900 text-sm">{stop.location_name}</div>
-                      <div className="text-slate-500 font-mono text-[11px] mt-0.5">
-                        {stop.latitude.toFixed(4)}, {stop.longitude.toFixed(4)}
+                    <div className="p-2 font-sans text-xs min-w-[200px] text-slate-900">
+                      {/* Top Role Badge */}
+                      <div className="flex items-center justify-between mb-1.5 pb-1 border-b border-slate-200">
+                        <span
+                          className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase text-white tracking-wider shadow-sm"
+                          style={{ backgroundColor: badgeBg }}
+                        >
+                          {roleName}
+                        </span>
+                        <span className="font-mono text-[10px] text-slate-500 font-bold">
+                          Stop #{stop.sequence_order || idx + 1}
+                        </span>
+                      </div>
+
+                      {/* Location Name & Full Address */}
+                      <div className="font-bold text-slate-900 text-sm leading-tight mb-2">
+                        {stop.location_name}
+                      </div>
+
+                      {/* Location Coordinates & Duration Details */}
+                      <div className="space-y-1 text-[11px] font-mono bg-slate-100 p-2 rounded border border-slate-200">
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-500">Latitude:</span>
+                          <span className="font-bold text-slate-800">{stop.latitude.toFixed(6)}°</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-500">Longitude:</span>
+                          <span className="font-bold text-slate-800">{stop.longitude.toFixed(6)}°</span>
+                        </div>
+                        {stop.duration_minutes !== undefined && (
+                          <div className="flex items-center justify-between pt-1 border-t border-slate-200">
+                            <span className="text-slate-500">Duration:</span>
+                            <span className="font-bold text-indigo-700">{stop.duration_minutes} min</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </Popup>
