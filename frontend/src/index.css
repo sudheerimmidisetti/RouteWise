@@ -100,22 +100,31 @@ body {
   color: #0284c7 !important;
 }
 
-/* Print-Optimized CSS for PDF & Paper Printing */
+/* Print-Optimized CSS: Hides EVERYTHING except the exact FMCSA Driver Daily Log sheet */
 @media print {
-  body {
-    background: #ffffff !important;
-    color: #000000 !important;
+  body * {
+    visibility: hidden !important;
   }
 
-  header, nav, button, .no-print {
-    display: none !important;
+  .print-only-log,
+  .print-only-log * {
+    visibility: visible !important;
   }
 
   .print-only-log {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
     width: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
     border: none !important;
     box-shadow: none !important;
+    background: #ffffff !important;
+  }
+
+  @page {
+    size: letter portrait;
+    margin: 0.5in;
   }
 }
