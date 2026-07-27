@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import TripForm from '../components/TripForm';
 import TripSummaryPlaceholder from '../components/TripSummaryPlaceholder';
+import DriverManifestForm from '../components/DriverManifestForm';
 import MapPlaceholder from '../components/MapPlaceholder';
 import DailyLogPlaceholder from '../components/DailyLogPlaceholder';
 import StopSchedule from '../components/StopSchedule';
@@ -12,6 +13,15 @@ const TripPlanner = () => {
   const [viewState, setViewState] = useState('idle'); // 'idle' | 'loading' | 'error' | 'success'
   const [tripData, setTripData] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
+
+  // Live Driver & Shipping Manifest Form State
+  const [manifestDetails, setManifestDetails] = useState({
+    driver_name: 'Demo Driver',
+    vehicle_number: 'TRK-001 / Trailer #TR-88',
+    shipping_number: 'AUTO-0001',
+    shipper_commodity: 'GENERAL FREIGHT / DRY VAN',
+    driver_signature: 'Demo Driver',
+  });
 
   const handleFormSubmit = async (formData) => {
     setViewState('loading');
@@ -65,10 +75,11 @@ const TripPlanner = () => {
 
         {/* Main Grid Workspace */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Left Column: Form & Trip Summary */}
+          {/* Left Column: Form, Trip Summary & Driver Manifest Input Form */}
           <div className="lg:col-span-5 space-y-6">
             <TripForm onSubmit={handleFormSubmit} onReset={handleFormReset} />
             <TripSummaryPlaceholder data={tripData} />
+            <DriverManifestForm details={manifestDetails} onChange={setManifestDetails} />
           </div>
 
           {/* Right Column: Map & Daily Log */}
@@ -89,10 +100,11 @@ const TripPlanner = () => {
               />
             )}
 
-            {/* Dynamic Multi-day FMCSA Daily Log Sheets */}
+            {/* Dynamic Multi-day FMCSA Daily Log Sheets with Live Manifest Details */}
             <DailyLogPlaceholder
               logs={tripData?.daily_logs || []}
               dailyLogs={tripData?.daily_logs || []}
+              manifestDetails={manifestDetails}
             />
           </div>
         </div>

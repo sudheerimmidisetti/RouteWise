@@ -5,16 +5,13 @@ import FMCSADutyGraph from './FMCSADutyGraph';
  * FMCSADailyLogSheet component replicating the official FMCSA Drivers Daily Log paper form
  * with pixel-level accuracy based on government document standards.
  */
-const FMCSADailyLogSheet = ({ log = {} }) => {
+const FMCSADailyLogSheet = ({ log = {}, manifestDetails = {} }) => {
   const {
     day_number = 1,
     date = new Date().toISOString().split('T')[0],
     miles_today = 0,
     carrier_name = 'RouteWise Logistics',
     main_office_address = '100 Transport Way, Suite 400, Chicago, IL 60601',
-    driver_name = 'Demo Driver',
-    vehicle_number = 'TRK-001 / Trailer #TR-88',
-    shipping_number = 'AUTO-0001',
     co_driver = 'N/A',
     driving_hours = 0,
     on_duty_hours = 0,
@@ -25,6 +22,13 @@ const FMCSADailyLogSheet = ({ log = {} }) => {
     remarks_detail = [],
     segments = [],
   } = log;
+
+  // Use live manifest details if supplied by user form, otherwise fallback to log object values
+  const driver_name = manifestDetails.driver_name || log.driver_name || 'Demo Driver';
+  const vehicle_number = manifestDetails.vehicle_number || log.vehicle_number || 'TRK-001 / Trailer #TR-88';
+  const shipping_number = manifestDetails.shipping_number || log.shipping_number || 'AUTO-0001';
+  const shipper_commodity = manifestDetails.shipper_commodity || log.shipper_commodity || 'GENERAL FREIGHT / DRY VAN';
+  const driver_signature = manifestDetails.driver_signature || log.driver_signature || driver_name;
 
   const totals = {
     off_duty: off_duty_hours,
@@ -166,11 +170,11 @@ const FMCSADailyLogSheet = ({ log = {} }) => {
             </div>
             <div>
               <span className="block text-[10px] font-semibold">Shipper & Commodity</span>
-              <span className="font-bold text-slate-900 block mt-0.5">GENERAL FREIGHT / DRY VAN</span>
+              <span className="font-bold text-slate-900 block mt-0.5">{shipper_commodity}</span>
             </div>
             <div>
               <span className="block text-[10px] font-semibold">Driver's Signature:</span>
-              <span className="font-bold text-slate-900 block mt-0.5 font-serif italic border-b border-black pb-0.5">{driver_name}</span>
+              <span className="font-bold text-slate-900 block mt-0.5 font-serif italic border-b border-black pb-0.5">{driver_signature}</span>
             </div>
           </div>
 
